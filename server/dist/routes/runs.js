@@ -8,6 +8,7 @@ const loop_1 = require("../agent/loop");
 const completedRuns = new Map();
 // Active run contexts, so we can stream events as they arrive
 const activeStreams = new Map();
+const runningRuns = new Map();
 // Paused contexts waiting for a user's follow-up answer.
 const pausedRuns = new Map();
 const pausedRunTimers = new Map();
@@ -30,6 +31,19 @@ function unpauseRun(runId) {
     if (timer)
         clearTimeout(timer);
     pausedRunTimers.delete(runId);
+}
+function cancelRun(runId) {
+    const ctx = runningRuns.get(runId) ?? pausedRuns.get(runId);
+    if (!ctx)
+        return false;
+    ctx.cancelled = true;
+    ctx.abortController?.abort();
+    unpauseRun(runId);
+    const events = activeStreams.get(runId);
+    if (events)
+        events.push({ kind: 'error', message: 'Agent run cancelled.' });
+    completedRuns.set(runId, { plan: null, error: 'Agent run cancelled.' });
+    return true;
 }
 async function runRoutes(app) {
     // POST /v1/runs — start a new agent run (create or edit)
@@ -69,7 +83,9 @@ async function runRoutes(app) {
             startedAt: new Date(),
             useMemory: useMemory !== false,
             memories: [],
+            abortController: new AbortController(),
         };
+        runningRuns.set(runId, ctx);
         // Run the loop asynchronously; events are buffered for the SSE stream
         (async () => {
             try {
@@ -90,8 +106,32 @@ async function runRoutes(app) {
                 }
                 completedRuns.set(runId, { plan: null, error: err.message });
             }
+            finally {
+                runningRuns.delete(runId);
+            }
         })();
         reply.send({ runId });
+    });
+    app.post('/v1/runs/:id/cancel', async (req, reply) => {
+        const authHeader = req.headers.authorization;
+        if (!authHeader?.startsWith('Bearer ')) {
+            return reply.status(401).send({ error: 'Missing authorization header' });
+        }
+        let userId;
+        try {
+            userId = await (0, supabase_1.verifyJwt)(authHeader.slice(7));
+        }
+        catch {
+            return reply.status(401).send({ error: 'Invalid token' });
+        }
+        const { id: runId } = req.params;
+        const ctx = runningRuns.get(runId) ?? pausedRuns.get(runId);
+        if (!ctx)
+            return reply.status(404).send({ error: 'Run not found' });
+        if (ctx.userId !== userId)
+            return reply.status(403).send({ error: 'Run belongs to another user' });
+        cancelRun(runId);
+        return reply.send({ cancelled: true });
     });
     app.post('/v1/runs/:id/answer', async (req, reply) => {
         const authHeader = req.headers.authorization;
@@ -118,11 +158,14 @@ async function runRoutes(app) {
         completedRuns.delete(runId);
         activeStreams.set(runId, []);
         ctx.awaitingUser = false;
+        ctx.cancelled = false;
+        ctx.abortController = new AbortController();
         ctx.messages.push({
             role: 'user',
             content: `User answered the follow-up question. Continue from the existing research and tool observations; do not restart completed lookups. Answer: ${answer}`,
         });
         (async () => {
+            runningRuns.set(runId, ctx);
             try {
                 const resultPlan = await (0, loop_1.runAgentLoop)(ctx, (event) => {
                     const events = activeStreams.get(runId);
@@ -140,6 +183,9 @@ async function runRoutes(app) {
                     events.push({ kind: 'error', message: err.message });
                 }
                 completedRuns.set(runId, { plan: null, error: err.message });
+            }
+            finally {
+                runningRuns.delete(runId);
             }
         })();
         reply.send({ runId });

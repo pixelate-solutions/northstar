@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import { AgentRunContext, TripPlan, SSEEmitter } from './state';
-import { TOOL_SCHEMAS, TOOL_HANDLERS } from './tools/registry';
-import { checkConstraints, checkToolCallCount, ConstraintError } from './constraints';
+import { TOOL_SCHEMAS, SURGICAL_EDIT_TOOL_SCHEMAS, TOOL_HANDLERS } from './tools/registry';
+import { checkConstraints, ConstraintError, DEFAULT_CONSTRAINTS, type ConstraintConfig } from './constraints';
 import { evaluatePlan, validationIssuesToString } from './evaluator';
 import { getDailyUsage, incrementDailyUsage, loadTravelMemories, savePlan, saveTravelMemories, type DailyUsage } from '../db/supabase';
 import { v4 as uuidv4 } from 'uuid';
@@ -20,6 +20,135 @@ function formatResetCountdown(resetAt: string): string {
 
 function usageLimitMessage(usage: DailyUsage): string {
   return `Usage limit reached. Your daily AI usage resets in ${formatResetCountdown(usage.resetAt)} at ${usage.resetAt}.`;
+}
+
+function isAbortError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return err.name === 'AbortError' || /abort/i.test(err.message);
+}
+
+const SURGICAL_EDIT_CONSTRAINTS: ConstraintConfig = {
+  ...DEFAULT_CONSTRAINTS,
+  maxSteps: Number.parseInt(process.env.AGENT_EDIT_MAX_STEPS ?? '', 10) || 8,
+  maxTokensTotal: Number.parseInt(process.env.AGENT_EDIT_MAX_TOKENS_TOTAL ?? '', 10) || 20_000,
+  maxToolCallsPerStep: Number.parseInt(process.env.AGENT_EDIT_MAX_TOOL_CALLS_PER_STEP ?? '', 10) || 8,
+};
+
+function isLargeEditRequest(instruction: string | undefined): boolean {
+  if (!instruction) return false;
+  return /\b(overhaul|rebuild|replan|redo|rework|start over|from scratch|entire trip|whole trip|all days|completely|major|replace itinerary|new itinerary|change destination|change destinations|different city|different country)\b/i.test(instruction);
+}
+
+function isSurgicalEdit(ctx: AgentRunContext): boolean {
+  return ctx.mode === 'edit' && !isLargeEditRequest(ctx.instruction);
+}
+
+function constraintsForRun(ctx: AgentRunContext): ConstraintConfig {
+  return isSurgicalEdit(ctx) ? SURGICAL_EDIT_CONSTRAINTS : DEFAULT_CONSTRAINTS;
+}
+
+function toolsForRun(ctx: AgentRunContext): OpenAI.Chat.ChatCompletionTool[] {
+  return isSurgicalEdit(ctx) ? SURGICAL_EDIT_TOOL_SCHEMAS : TOOL_SCHEMAS;
+}
+
+function appendAgentEvent(plan: TripPlan, title: string, detail: string): TripPlan {
+  return {
+    ...plan,
+    agent_events: [
+      ...(plan.agent_events ?? []),
+      { kind: 'model', title, detail },
+    ],
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function replaceYearInDateRange(dateRange: string, instruction: string): string | null {
+  const fromTo = /\b(?:from\s+)?(20\d{2})\s+(?:to|into|through|->)\s+(20\d{2})\b/i.exec(instruction);
+  if (fromTo) {
+    const [, fromYear, toYear] = fromTo;
+    if (dateRange.includes(fromYear)) return dateRange.replace(new RegExp(fromYear, 'g'), toYear);
+    if (/\b20\d{2}\b/.test(dateRange)) return dateRange.replace(/\b20\d{2}\b/g, toYear);
+    return `${dateRange}, ${toYear}`;
+  }
+
+  const toYear = /\b(?:to|for|in)\s+(20\d{2})\b/i.exec(instruction)?.[1];
+  if (!toYear) return null;
+  if (/\b20\d{2}\b/.test(dateRange)) return dateRange.replace(/\b20\d{2}\b/g, toYear);
+  return `${dateRange}, ${toYear}`;
+}
+
+function quotedValue(instruction: string): string | null {
+  return /["“](.+?)["”]/.exec(instruction)?.[1]?.trim() ?? null;
+}
+
+function extractValueAfter(instruction: string, pattern: RegExp): string | null {
+  const match = pattern.exec(instruction);
+  const value = match?.[1]?.trim();
+  return value && value.length <= 220 ? value : null;
+}
+
+export function tryApplyFastEdit(ctx: AgentRunContext): TripPlan | null {
+  if (ctx.mode !== 'edit' || !ctx.plan || !ctx.instruction) return null;
+
+  const instruction = ctx.instruction.replace(/\s+/g, ' ').trim();
+  const lower = instruction.toLowerCase();
+  const modifiesItinerary = /\b(stop|stops|place|places|location|locations|restaurant|restaurants|hotel|lodging|route|map|activity|activities|museum|ticket|walk|transit|flight|train|drive|day\s+\d|morning|afternoon|evening|dinner|lunch|breakfast|budget|cost|destination|city|cities)\b/.test(lower);
+
+  let updated: TripPlan = {
+    ...ctx.plan,
+    days: [...ctx.plan.days],
+    open_questions: [...ctx.plan.open_questions],
+    destinations: [...ctx.plan.destinations],
+    agent_events: [...(ctx.plan.agent_events ?? [])],
+    budget_categories: ctx.plan.budget_categories ? { ...ctx.plan.budget_categories } : undefined,
+  };
+  let changed = false;
+
+  if (/\b(date|dates|year|years|when|20\d{2})\b/.test(lower)) {
+    const nextDateRange = replaceYearInDateRange(updated.date_range, instruction);
+    if (nextDateRange && nextDateRange !== updated.date_range) {
+      updated = { ...updated, date_range: nextDateRange };
+      changed = true;
+    }
+  }
+
+  if (!modifiesItinerary && /\b(title|name|rename)\b/.test(lower)) {
+    const nextTitle =
+      quotedValue(instruction) ??
+      extractValueAfter(instruction, /\b(?:title|name|rename)(?:\s+(?:the\s+)?trip)?\s+(?:to|as)\s+(.+)$/i);
+    if (nextTitle && nextTitle !== updated.title) {
+      updated = { ...updated, title: compactText(nextTitle, 46) };
+      changed = true;
+    }
+  }
+
+  if (!modifiesItinerary && /\b(summary|description)\b/.test(lower)) {
+    const nextSummary =
+      quotedValue(instruction) ??
+      extractValueAfter(instruction, /\b(?:summary|description)\s+(?:to|as)\s+(.+)$/i);
+    if (nextSummary && nextSummary !== updated.summary) {
+      updated = { ...updated, summary: compactText(nextSummary, 160) };
+      changed = true;
+    }
+  }
+
+  if (!modifiesItinerary && /\b(pace|speed)\b/.test(lower)) {
+    const pace = /\b(easy|balanced|packed)\b/i.exec(instruction)?.[1];
+    if (pace) {
+      const nextPace = `${pace[0].toUpperCase()}${pace.slice(1).toLowerCase()}`;
+      if (nextPace !== updated.pace) {
+        updated = { ...updated, pace: nextPace };
+        changed = true;
+      }
+    }
+  }
+
+  if (!changed) return null;
+  return appendAgentEvent(
+    sanitizePlan(updated),
+    'Quick edit',
+    `Applied without rebuilding the itinerary: ${compactText(instruction, 100)}`,
+  );
 }
 
 async function checkDailyUsageLimit(ctx: AgentRunContext): Promise<string | null> {
@@ -161,7 +290,36 @@ Rules:
 
   const plan = ctx.plan!;
   const instr = ctx.instruction!;
-  return `You are Northstar, a travel planning AI. The user wants to edit an existing trip plan.
+  if (isSurgicalEdit(ctx)) {
+    return `You are Northstar, a travel planning AI. The user wants to make a surgical edit to an existing trip plan.
+
+Current plan: "${plan.title}" (${plan.destinations.join(', ')}, ${plan.date_range})
+Edit request: "${instr}"
+${memorySection(ctx)}
+
+Current days:
+${JSON.stringify(plan.days, null, 2)}
+
+Surgical edit rules:
+1. Make the smallest correct change. Do not replan unaffected days.
+2. Metadata-only edits: call finalize_plan once with unchanged days and updated metadata.
+3. "Add a stop to day N": geocode only the new stop, call build_day only for day N with existing stops plus the new stop, then finalize_plan.
+4. "Add one more day": build only the new day. Do not rebuild existing days.
+5. "Leave more time", "slow down", or meal-buffer edits: call build_day only for the affected day with adjusted times/notes, then finalize_plan. Do not geocode if stops are unchanged.
+6. If the requested small edit is ambiguous and cannot be inferred from the existing plan, call ask_user once.
+7. Do not call web_search, search_places, get_weather, check_open_hours, or audit_timing in surgical edit mode.
+8. Keep unchanged days byte-for-byte equivalent in meaning and content.
+
+Keep unchanged days as-is. Do not regress existing stops unnecessarily.
+- Keep all user-facing text brief: plan title max 6 words, summary max 2 sentences, day title max 5 words, day guidance max 1 sentence, stop title max 5 words, stop note max 1 sentence.
+- Every stop time MUST be a concrete 24-hour HH:MM value such as "09:00" or "14:30". Never use words like "morning", "afternoon", "late afternoon", or "evening" in the time field.
+- Never include internal implementation notes in the plan. Do not mention validation, coordinates, geocoding, tools, model behavior, or adjustments made to satisfy validators.
+- open_questions are clickable follow-up commands, not questions. Write each as a short imperative statement ending with a period, such as "Confirm the hotel neighborhood." Do not use question marks.
+- Every stop MUST include estimated_cost (in USD, use 0 for free) and cost_category.
+- When calling finalize_plan, re-sum all stop costs by category for budget_categories.`;
+  }
+
+  return `You are Northstar, a travel planning AI. The user wants a broad edit to an existing trip plan.
 
 Current plan: "${plan.title}" (${plan.destinations.join(', ')}, ${plan.date_range})
 Edit request: "${instr}"
@@ -172,10 +330,11 @@ ${JSON.stringify(plan.days, null, 2)}
 
 Your process:
 1. Understand what needs to change.
-2. Re-geocode any new stops you introduce.
-3. Call build_day to replace only the days that need changes.
-4. Call audit_timing to validate modified days.
-5. Call finalize_plan with the updated metadata.
+2. If the request only changes metadata such as date_range, title, summary, pace, or open_questions, do not call web_search, geocode_place, search_places, get_weather, build_day, audit_timing, or check_open_hours. Call finalize_plan once with unchanged days and updated metadata.
+3. If the request changes itinerary content, re-geocode only new stops you introduce.
+4. For itinerary-content changes, call build_day to replace only the days that need changes.
+5. For itinerary-content changes, call audit_timing only for modified days.
+6. Call finalize_plan with the updated metadata.
 
 Keep unchanged days as-is. Do not regress existing stops unnecessarily.
 - Keep all user-facing text brief: plan title max 6 words, summary max 2 sentences, day title max 5 words, day guidance max 1 sentence, stop title max 5 words, stop note max 1 sentence.
@@ -226,6 +385,23 @@ function deriveMemories(ctx: AgentRunContext, plan: TripPlan): string[] {
 }
 
 export async function runAgentLoop(ctx: AgentRunContext, emit: SSEEmitter): Promise<TripPlan | null> {
+  const fastEdit = tryApplyFastEdit(ctx);
+  if (fastEdit) {
+    emit({ kind: 'model', title: 'Applying quick edit', detail: 'Updating trip metadata without planning tools.' });
+    try {
+      await savePlan(ctx.userId, fastEdit);
+    } catch (err) {
+      emit({ kind: 'error', message: `Failed to save plan: ${(err as Error).message}` });
+      return null;
+    }
+    emit({ kind: 'complete', plan: fastEdit });
+    return fastEdit;
+  }
+
+  const runConstraints = constraintsForRun(ctx);
+  const runTools = toolsForRun(ctx);
+  const maxCompletionTokens = isSurgicalEdit(ctx) ? 2048 : 4096;
+
   // For edit mode, seed accumulated days from the existing plan
   if (ctx.mode === 'edit' && ctx.plan && ctx.accumulatedDays.length === 0) {
     ctx.accumulatedDays = [...ctx.plan.days];
@@ -251,8 +427,10 @@ export async function runAgentLoop(ctx: AgentRunContext, emit: SSEEmitter): Prom
   let correctionAttempts = 0;
 
   while (true) {
+    if (ctx.cancelled) return null;
+
     try {
-      checkConstraints(ctx);
+      checkConstraints(ctx, runConstraints);
     } catch (err) {
       if (err instanceof ConstraintError) {
         emit({ kind: 'constraint_exceeded', message: err.message });
@@ -275,15 +453,24 @@ export async function runAgentLoop(ctx: AgentRunContext, emit: SSEEmitter): Prom
     emit({ kind: 'model', title: 'Thinking…', detail: `Step ${ctx.stepCount + 1}` });
 
     // Call the model
-    const stream = await openai.chat.completions.create({
-      model: 'gpt-5.4-mini',
-      messages: ctx.messages,
-      tools: TOOL_SCHEMAS,
-      tool_choice: 'auto',
-      max_completion_tokens: 4096,
-      stream: true,
-      stream_options: { include_usage: true },
-    });
+    let stream: Awaited<ReturnType<typeof openai.chat.completions.create>>;
+    try {
+      stream = await openai.chat.completions.create(
+        {
+          model: 'gpt-5.4-mini',
+          messages: ctx.messages,
+          tools: runTools,
+          tool_choice: 'auto',
+          max_completion_tokens: maxCompletionTokens,
+          stream: true,
+          stream_options: { include_usage: true },
+        },
+        { signal: ctx.abortController?.signal },
+      );
+    } catch (err) {
+      if (ctx.cancelled || isAbortError(err)) return null;
+      throw err;
+    }
 
     // Assemble the full response from the stream
     let content = '';
@@ -291,28 +478,36 @@ export async function runAgentLoop(ctx: AgentRunContext, emit: SSEEmitter): Prom
     let promptTokens = 0;
     let completionTokens = 0;
 
-    for await (const chunk of stream) {
-      if (chunk.usage) {
-        promptTokens = chunk.usage.prompt_tokens ?? 0;
-        completionTokens = chunk.usage.completion_tokens ?? 0;
-      }
+    try {
+      for await (const chunk of stream) {
+        if (ctx.cancelled) return null;
 
-      const delta = chunk.choices[0]?.delta;
-      if (!delta) continue;
-
-      if (delta.content) content += delta.content;
-
-      for (const tc of delta.tool_calls ?? []) {
-        const idx = tc.index ?? 0;
-        if (!toolCallMap[idx]) {
-          toolCallMap[idx] = { id: tc.id ?? '', name: tc.function?.name ?? '', args: '' };
+        if (chunk.usage) {
+          promptTokens = chunk.usage.prompt_tokens ?? 0;
+          completionTokens = chunk.usage.completion_tokens ?? 0;
         }
-        if (tc.id) toolCallMap[idx].id = tc.id;
-        if (tc.function?.name) toolCallMap[idx].name = tc.function.name;
-        if (tc.function?.arguments) toolCallMap[idx].args += tc.function.arguments;
-      }
 
+        const delta = chunk.choices[0]?.delta;
+        if (!delta) continue;
+
+        if (delta.content) content += delta.content;
+
+        for (const tc of delta.tool_calls ?? []) {
+          const idx = tc.index ?? 0;
+          if (!toolCallMap[idx]) {
+            toolCallMap[idx] = { id: tc.id ?? '', name: tc.function?.name ?? '', args: '' };
+          }
+          if (tc.id) toolCallMap[idx].id = tc.id;
+          if (tc.function?.name) toolCallMap[idx].name = tc.function.name;
+          if (tc.function?.arguments) toolCallMap[idx].args += tc.function.arguments;
+        }
+      }
+    } catch (err) {
+      if (ctx.cancelled || isAbortError(err)) return null;
+      throw err;
     }
+
+    if (ctx.cancelled) return null;
 
     ctx.tokenUsage.prompt += promptTokens;
     ctx.tokenUsage.completion += completionTokens;
@@ -352,17 +547,9 @@ export async function runAgentLoop(ctx: AgentRunContext, emit: SSEEmitter): Prom
       continue;
     }
 
-    try {
-      checkToolCallCount(toolCalls.length);
-    } catch (err) {
-      if (err instanceof ConstraintError) {
-        emit({ kind: 'constraint_exceeded', message: err.message });
-        return null;
-      }
-    }
-
     // Execute tool calls sequentially
     for (const tc of toolCalls) {
+      if (ctx.cancelled) return null;
       emit({ kind: 'tool', title: tc.name, detail: tc.args.slice(0, 120) });
 
       const handler = TOOL_HANDLERS[tc.name];

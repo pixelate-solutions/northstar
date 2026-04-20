@@ -108,6 +108,69 @@ void main() {
     expect(result.needsMoreInfo, isTrue);
     expect(result.followUpQuestion, 'When do you want to travel?');
   });
+
+  test('AgentClient cancel stops stream and posts cancel endpoint', () async {
+    final streamStarted = Completer<void>();
+    final cancelReceived = Completer<void>();
+
+    server.listen((request) async {
+      if (request.method == 'POST' && request.uri.path == '/v1/runs') {
+        request.response
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode({'runId': 'run-cancel'}));
+        await request.response.close();
+        return;
+      }
+
+      if (request.method == 'GET' &&
+          request.uri.path == '/v1/runs/run-cancel/stream') {
+        request.response.headers
+          ..contentType = ContentType('text', 'event-stream')
+          ..set(HttpHeaders.cacheControlHeader, 'no-cache');
+        request.response.write(
+          'data: ${jsonEncode({'kind': 'model', 'title': 'Thinking', 'detail': 'Step 1'})}\n\n',
+        );
+        await request.response.flush();
+        streamStarted.complete();
+        await cancelReceived.future;
+        await request.response.close();
+        return;
+      }
+
+      if (request.method == 'POST' &&
+          request.uri.path == '/v1/runs/run-cancel/cancel') {
+        cancelReceived.complete();
+        request.response
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode({'cancelled': true}));
+        await request.response.close();
+        return;
+      }
+
+      request.response.statusCode = HttpStatus.notFound;
+      await request.response.close();
+    });
+
+    final client = AgentClient(
+      serverUrl: 'http://localhost:${server.port}',
+      accessTokenProvider: () => 'test-token',
+    );
+    final controller = AgentRunController();
+    final future = client.createPlan(
+      const TripBrief(destinations: 'Lisbon'),
+      controller: controller,
+    );
+    final cancellationExpectation = expectLater(
+      future,
+      throwsA(isA<AgentRunCancelledException>()),
+    );
+
+    await streamStarted.future;
+    await controller.cancel();
+
+    await cancellationExpectation;
+    await cancelReceived.future;
+  });
 }
 
 Map<String, dynamic> _planJson() => {

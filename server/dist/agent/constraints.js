@@ -11,10 +11,10 @@ function envInt(name, fallback) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 exports.DEFAULT_CONSTRAINTS = {
-    maxSteps: envInt('AGENT_MAX_STEPS', 80),
-    maxTokensTotal: envInt('AGENT_MAX_TOKENS_TOTAL', 500_000),
+    maxSteps: envInt('AGENT_MAX_STEPS', 30),
+    maxTokensTotal: envInt('AGENT_MAX_TOKENS_TOTAL', 80_000),
     timeoutMs: envInt('AGENT_TIMEOUT_MS', 1_200_000),
-    maxToolCallsPerStep: envInt('AGENT_MAX_TOOL_CALLS_PER_STEP', 250),
+    maxToolCallsPerStep: envInt('AGENT_MAX_TOOL_CALLS_PER_STEP', 40),
 };
 class ConstraintError extends Error {
     kind;
@@ -26,13 +26,6 @@ class ConstraintError extends Error {
 }
 exports.ConstraintError = ConstraintError;
 function checkConstraints(ctx, config = exports.DEFAULT_CONSTRAINTS) {
-    if (ctx.stepCount >= config.maxSteps) {
-        throw new ConstraintError('max_steps', `Reached step limit (${config.maxSteps} steps). Stopping agent run.`);
-    }
-    const totalTokens = ctx.tokenUsage.prompt + ctx.tokenUsage.completion;
-    if (totalTokens >= config.maxTokensTotal) {
-        throw new ConstraintError('max_tokens', `Reached token budget (${config.maxTokensTotal} tokens). Stopping agent run.`);
-    }
     const elapsed = Date.now() - ctx.startedAt.getTime();
     if (elapsed >= config.timeoutMs) {
         throw new ConstraintError('timeout', `Agent run exceeded time limit (${config.timeoutMs / 1000}s).`);

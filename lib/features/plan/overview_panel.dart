@@ -284,16 +284,76 @@ String _followUpCommand(String value) {
   final clean = _briefPublicText(
     value,
     maxChars: 100,
-  ).replaceAll(RegExp(r'\?+$'), '.').trim();
+  ).replaceAll('?', '').replaceAll(RegExp(r'[.!\s]+$'), '').trim();
   if (clean.isEmpty) return clean;
   final lower = clean.toLowerCase();
   if (RegExp(
+    r'^(add|create|refine|confirm|pick|set|choose|include|replace|move|make|keep|remove|update|suggest|draft)\b',
+  ).hasMatch(lower)) {
+    return _ensureCommandPeriod(clean);
+  }
+  if (RegExp(
     r'^(do|does|did|are|is|was|were|will|would|should|can|could|have|has)\b',
   ).hasMatch(lower)) {
-    return 'Confirm: ${clean.replaceAll(RegExp(r'\.$'), '')}.';
+    final topic = _stripQuestionLead(clean);
+    return _ensureCommandPeriod('Refine the plan by adding $topic');
   }
   if (RegExp(r'^(what|where|when|who|which|how)\b').hasMatch(lower)) {
-    return 'Provide: ${clean.replaceAll(RegExp(r'\.$'), '')}.';
+    final topic = _stripQuestionLead(clean);
+    if (lower.startsWith('where')) {
+      return _ensureCommandPeriod('Set the location for $topic');
+    }
+    if (lower.startsWith('when')) {
+      return _ensureCommandPeriod('Set the timing for $topic');
+    }
+    if (lower.startsWith('which')) {
+      return _ensureCommandPeriod('Choose $topic');
+    }
+    if (lower.startsWith('how')) {
+      return _ensureCommandPeriod('Refine the plan by $topic');
+    }
+    return _ensureCommandPeriod('Add more detail about $topic');
   }
+  return _ensureCommandPeriod(clean);
+}
+
+String _stripQuestionLead(String value) {
+  var text = value.trim();
+  final replacements = <RegExp, String>{
+    RegExp(
+      r'^(would you like to|do you want to|should we|can we|could we|will we|would we)\s+',
+      caseSensitive: false,
+    ): '',
+    RegExp(
+      r'^(do|does|did|are|is|was|were|will|would|should|can|could|have|has)\s+(we|you|i)\s+',
+      caseSensitive: false,
+    ): '',
+    RegExp(r'^(what|where|when|who|which|how)\s+', caseSensitive: false): '',
+  };
+  for (final entry in replacements.entries) {
+    text = text.replaceFirst(entry.key, entry.value).trim();
+  }
+  text = text.replaceFirst(
+    RegExp(
+      r'^(should|can|could|would|will|do|does|did|are|is|have|has)\s+(we|you|i)\s+',
+      caseSensitive: false,
+    ),
+    '',
+  );
+  text = text.replaceFirst(
+    RegExp(r'^(should|can|could|would|will)\s+', caseSensitive: false),
+    '',
+  );
+  return _lowercaseFirst(text.isEmpty ? value : text);
+}
+
+String _ensureCommandPeriod(String value) {
+  final clean = value.replaceAll(RegExp(r'\?+'), '').trim();
+  if (clean.isEmpty) return clean;
   return RegExp(r'[.!]$').hasMatch(clean) ? clean : '$clean.';
+}
+
+String _lowercaseFirst(String value) {
+  if (value.isEmpty) return value;
+  return '${value[0].toLowerCase()}${value.substring(1)}';
 }

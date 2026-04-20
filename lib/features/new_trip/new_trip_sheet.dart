@@ -30,9 +30,11 @@ class _NewTripSheetState extends State<NewTripSheet> {
   String _pace = 'Balanced';
   String? _question;
   bool _running = false;
+  AgentRunController? _runController;
 
   @override
   void dispose() {
+    _runController?.cancel();
     _destinations.dispose();
     _dates.dispose();
     _travelers.dispose();
@@ -60,13 +62,16 @@ class _NewTripSheetState extends State<NewTripSheet> {
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _running = true;
+      _runController = AgentRunController();
       _events.clear();
       _question = null;
     });
 
     try {
+      final controller = _runController;
       final result = await widget.agent.createPlan(
         _brief,
+        controller: controller,
         onEvent: (e) {
           if (!mounted) return;
           setState(() => _events.add(e));
@@ -79,6 +84,7 @@ class _NewTripSheetState extends State<NewTripSheet> {
         setState(() {
           _question = result.followUpQuestion;
           _running = false;
+          _runController = null;
         });
         return;
       }
@@ -88,8 +94,16 @@ class _NewTripSheetState extends State<NewTripSheet> {
       }
     } catch (e) {
       if (!mounted) return;
+      if (e is AgentRunCancelledException) {
+        setState(() {
+          _running = false;
+          _runController = null;
+        });
+        return;
+      }
       setState(() {
         _running = false;
+        _runController = null;
         _events.add(
           AgentEvent(
             kind: AgentEventKind.complete,
@@ -99,6 +113,15 @@ class _NewTripSheetState extends State<NewTripSheet> {
         );
       });
     }
+  }
+
+  Future<void> _cancelPlan() async {
+    final controller = _runController;
+    setState(() {
+      _running = false;
+      _runController = null;
+    });
+    await controller?.cancel();
   }
 
   void _answerFollowUp() {
@@ -233,18 +256,19 @@ class _NewTripSheetState extends State<NewTripSheet> {
                       ),
                     ],
                     const SizedBox(height: 18),
-                    FilledButton.icon(
-                      key: const ValueKey('create-plan-button'),
-                      onPressed: _running ? null : _createPlan,
-                      icon: _running
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.auto_awesome_rounded),
-                      label: Text(_running ? 'Planning...' : 'Create plan'),
-                    ),
+                    if (_running)
+                      OutlinedButton.icon(
+                        onPressed: _cancelPlan,
+                        icon: const Icon(Icons.stop_rounded),
+                        label: const Text('Stop planning'),
+                      )
+                    else
+                      FilledButton.icon(
+                        key: const ValueKey('create-plan-button'),
+                        onPressed: _createPlan,
+                        icon: const Icon(Icons.auto_awesome_rounded),
+                        label: const Text('Create plan'),
+                      ),
                     const SizedBox(height: 20),
                     Text(
                       'Optional context',

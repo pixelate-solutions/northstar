@@ -50,6 +50,7 @@ class _AiTripScreenState extends State<AiTripScreen>
   String? _instructionPrefix;
   TripPlan? _readyPlan;
   bool _running = false;
+  AgentRunController? _runController;
 
   TripPlan? get _editingPlan {
     if (_tripId == 'new') return null;
@@ -71,6 +72,7 @@ class _AiTripScreenState extends State<AiTripScreen>
 
   @override
   void dispose() {
+    _runController?.cancel();
     _input.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -86,6 +88,7 @@ class _AiTripScreenState extends State<AiTripScreen>
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _running = true;
+      _runController = AgentRunController();
       _brief = prompt;
       _question = null;
       _pendingRunId = null;
@@ -97,6 +100,7 @@ class _AiTripScreenState extends State<AiTripScreen>
 
     try {
       final editingPlan = _editingPlan;
+      final controller = _runController;
       final result = editingPlan == null
           ? await widget.agent.createPlan(
               TripBrief(
@@ -105,11 +109,13 @@ class _AiTripScreenState extends State<AiTripScreen>
                 notes: 'User prompt: $prompt',
               ),
               onEvent: _recordEvent,
+              controller: controller,
             )
           : await widget.agent.editPlan(
               editingPlan,
               prompt,
               onEvent: _recordEvent,
+              controller: controller,
             );
 
       if (!mounted) return;
@@ -126,6 +132,7 @@ class _AiTripScreenState extends State<AiTripScreen>
           _pendingRunId = result.runId;
           _input.clear();
           _running = false;
+          _runController = null;
         });
         return;
       }
@@ -135,6 +142,7 @@ class _AiTripScreenState extends State<AiTripScreen>
         setState(() {
           _error = 'The agent finished without returning a trip plan.';
           _running = false;
+          _runController = null;
         });
         return;
       }
@@ -149,12 +157,21 @@ class _AiTripScreenState extends State<AiTripScreen>
         _pendingRunId = null;
         _instructionPrefix = null;
         _running = false;
+        _runController = null;
       });
     } catch (e) {
       if (!mounted) return;
+      if (e is AgentRunCancelledException) {
+        setState(() {
+          _running = false;
+          _runController = null;
+        });
+        return;
+      }
       setState(() {
         _error = _cleanAgentError(e);
         _running = false;
+        _runController = null;
       });
     }
   }
@@ -181,6 +198,7 @@ class _AiTripScreenState extends State<AiTripScreen>
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _running = true;
+      _runController = AgentRunController();
       _threadMessages.add(_FollowUpMessage.user(answer));
       _question = null;
       _error = null;
@@ -190,10 +208,12 @@ class _AiTripScreenState extends State<AiTripScreen>
 
     () async {
       try {
+        final controller = _runController;
         final result = await widget.agent.continueRun(
           runId,
           answer,
           onEvent: _recordEvent,
+          controller: controller,
         );
         if (!mounted) return;
         if (result.needsMoreInfo) {
@@ -205,6 +225,7 @@ class _AiTripScreenState extends State<AiTripScreen>
             _threadMessages.add(_FollowUpMessage.assistant(question));
             _pendingRunId = result.runId ?? runId;
             _running = false;
+            _runController = null;
           });
           return;
         }
@@ -214,6 +235,7 @@ class _AiTripScreenState extends State<AiTripScreen>
           setState(() {
             _error = 'The agent finished without returning a trip plan.';
             _running = false;
+            _runController = null;
           });
           return;
         }
@@ -227,15 +249,33 @@ class _AiTripScreenState extends State<AiTripScreen>
           _pendingRunId = null;
           _instructionPrefix = null;
           _running = false;
+          _runController = null;
         });
       } catch (e) {
         if (!mounted) return;
+        if (e is AgentRunCancelledException) {
+          setState(() {
+            _running = false;
+            _runController = null;
+          });
+          return;
+        }
         setState(() {
           _error = _cleanAgentError(e);
           _running = false;
+          _runController = null;
         });
       }
     }();
+  }
+
+  Future<void> _cancelActiveRun() async {
+    final controller = _runController;
+    setState(() {
+      _running = false;
+      _runController = null;
+    });
+    await controller?.cancel();
   }
 
   void _selectTrip(String? id) {
@@ -313,6 +353,7 @@ class _AiTripScreenState extends State<AiTripScreen>
                           brief: _brief ?? '',
                           threadMessages: List.unmodifiable(_threadMessages),
                           events: _events,
+                          onCancel: _cancelActiveRun,
                         )
                       : _IdlePanel(
                           key: const ValueKey('idle'),
@@ -836,11 +877,13 @@ class _RunningPanel extends StatelessWidget {
     required this.brief,
     required this.threadMessages,
     required this.events,
+    required this.onCancel,
   });
 
   final String brief;
   final List<_FollowUpMessage> threadMessages;
   final List<AgentEvent> events;
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -873,6 +916,14 @@ class _RunningPanel extends StatelessWidget {
         LinearProgressIndicator(
           minHeight: 3,
           borderRadius: BorderRadius.circular(8),
+        ),
+        const SizedBox(height: 12),
+        Center(
+          child: OutlinedButton.icon(
+            onPressed: onCancel,
+            icon: const Icon(Icons.stop_rounded),
+            label: const Text('Stop'),
+          ),
         ),
         const SizedBox(height: 18),
         if (events.isEmpty)

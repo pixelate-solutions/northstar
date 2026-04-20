@@ -291,21 +291,32 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           const BiometricPreferenceTile(),
           const SizedBox(height: 14),
           _Section(
-            title: 'Preferences',
+            title: 'Account settings',
             children: [
+              const _PreferenceCategory('Notifications'),
               SwitchListTile(
                 value: _emailReminders,
                 onChanged: (value) => setState(() => _emailReminders = value),
                 title: const Text('Email trip reminders'),
+                subtitle: const Text(
+                  'Send reminders for saved trip dates, bookings, and prep items.',
+                ),
                 contentPadding: EdgeInsets.zero,
               ),
+              const Divider(height: 18),
+              const _PreferenceCategory('Planning'),
               SwitchListTile(
                 value: _lowStressDefaults,
                 onChanged: (value) =>
                     setState(() => _lowStressDefaults = value),
                 title: const Text('Low-stress planning defaults'),
+                subtitle: const Text(
+                  'Keep mornings easier, add buffer time, and avoid overpacking each day unless you ask for a faster pace.',
+                ),
                 contentPadding: EdgeInsets.zero,
               ),
+              const Divider(height: 18),
+              const _PreferenceCategory('AI'),
               SwitchListTile(
                 value: _useAiMemory,
                 onChanged: (value) => setState(() => _useAiMemory = value),
@@ -552,8 +563,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
             const _SectionLabel('Preferences'),
             _CardShell(
               children: [
+                const _CardGroupLabel('Notifications'),
                 _PrefSwitchRow(
                   label: 'Email trip reminders',
+                  subtitle:
+                      'Send reminders for saved trip dates, bookings, and prep items.',
                   value: _emailReminders,
                   onChanged: (v) {
                     setState(() => _emailReminders = v);
@@ -561,8 +575,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                   },
                 ),
                 const _CardDivider(),
+                const _CardGroupLabel('Planning'),
                 _PrefSwitchRow(
                   label: 'Low-stress planning',
+                  subtitle:
+                      'Keeps mornings easier, adds buffer time, and avoids overpacking each day unless you ask for a faster pace.',
                   value: _lowStressDefaults,
                   onChanged: (v) {
                     setState(() => _lowStressDefaults = v);
@@ -570,6 +587,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                   },
                 ),
                 const _CardDivider(),
+                const _CardGroupLabel('AI'),
                 _PrefSwitchRow(
                   label: 'Use AI memory',
                   subtitle:
@@ -581,6 +599,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                   },
                 ),
                 const _CardDivider(),
+                const _CardGroupLabel('App'),
                 offlineModeAsync.when(
                   loading: () => const _PrefSwitchRow(
                     label: 'Offline mode',
@@ -599,7 +618,6 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         ref.read(offlineModeProvider.notifier).setEnabled(v),
                   ),
                 ),
-                const _CardDivider(),
                 homeTabAsync.when(
                   loading: () => const SizedBox.shrink(),
                   error: (_, _) => const SizedBox.shrink(),
@@ -769,13 +787,6 @@ class _UsageLimitBody extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Text(
-                    '${usage.tokensUsed}/${usage.tokenLimit}',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: cs.onSurface.withValues(alpha: .58),
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -790,7 +801,7 @@ class _UsageLimitBody extends StatelessWidget {
               Text(
                 overLimit
                     ? 'Daily usage limit reached. Resets in ${_formatResetCountdown(usage.resetAt)}.'
-                    : '${usage.tokensRemaining} tokens left today. Resets in ${_formatResetCountdown(usage.resetAt)}.',
+                    : 'Resets in ${_formatResetCountdown(usage.resetAt)}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: overLimit
                       ? cs.error
@@ -890,6 +901,27 @@ class _Section extends StatelessWidget {
   }
 }
 
+class _PreferenceCategory extends StatelessWidget {
+  const _PreferenceCategory(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        label.toUpperCase(),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: .52),
+          fontWeight: FontWeight.w900,
+          letterSpacing: .4,
+        ),
+      ),
+    );
+  }
+}
+
 class _CardShell extends StatelessWidget {
   const _CardShell({required this.children});
   final List<Widget> children;
@@ -928,6 +960,28 @@ class _CardDivider extends StatelessWidget {
       indent: 16,
       endIndent: 0,
       color: Theme.of(context).colorScheme.onSurface.withValues(alpha: .08),
+    );
+  }
+}
+
+class _CardGroupLabel extends StatelessWidget {
+  const _CardGroupLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
+      child: Text(
+        label.toUpperCase(),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: cs.onSurface.withValues(alpha: .48),
+          fontWeight: FontWeight.w900,
+          letterSpacing: .4,
+        ),
+      ),
     );
   }
 }

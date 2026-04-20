@@ -1,4 +1,4 @@
-import { TOOL_SCHEMAS, TOOL_HANDLERS } from '../src/agent/tools/registry';
+import { SURGICAL_EDIT_TOOL_SCHEMAS, TOOL_SCHEMAS, TOOL_HANDLERS } from '../src/agent/tools/registry';
 
 describe('tool schemas', () => {
   it('all 9 expected tools are defined in TOOL_SCHEMAS', () => {
@@ -42,6 +42,16 @@ describe('tool schemas', () => {
     for (const tool of TOOL_SCHEMAS) {
       expect(TOOL_HANDLERS[tool.function.name]).toBeDefined();
     }
+  });
+
+  it('surgical edit mode exposes only cheap edit tools', () => {
+    const names = SURGICAL_EDIT_TOOL_SCHEMAS.map((t) => t.function.name);
+    expect(names).toEqual([
+      'geocode_place',
+      'build_day',
+      'finalize_plan',
+      'ask_user',
+    ]);
   });
 
   it('build_day stops items require all 7 stop fields', () => {

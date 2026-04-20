@@ -21,6 +21,7 @@ class PlanHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final daysUntilStart = _daysUntilTripStart(plan.dateRange);
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: BackdropFilter(
@@ -141,7 +142,7 @@ class PlanHero extends StatelessWidget {
                   Expanded(
                     child: _HeroStat(
                       icon: Icons.calendar_today_outlined,
-                      label: 'Days',
+                      label: 'Trip days',
                       value: '${plan.days.length}',
                       color: kForest,
                     ),
@@ -150,7 +151,7 @@ class PlanHero extends StatelessWidget {
                   Expanded(
                     child: _HeroStat(
                       icon: Icons.pin_drop_outlined,
-                      label: 'Mapped',
+                      label: 'Stops',
                       value: '${plan.stops.length}',
                       color: kCoral,
                     ),
@@ -158,9 +159,9 @@ class PlanHero extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: _HeroStat(
-                      icon: Icons.auto_awesome_outlined,
-                      label: 'Agent',
-                      value: '${plan.agentEvents.length}',
+                      icon: Icons.event_available_outlined,
+                      label: 'Days until',
+                      value: daysUntilStart?.toString() ?? '--',
                       color: kSky,
                     ),
                   ),
@@ -192,6 +193,52 @@ String _briefPublicText(String value, {required int maxChars}) {
   final cut = text.substring(0, maxChars + 1);
   final boundary = cut.lastIndexOf(RegExp(r'\s'));
   return '${cut.substring(0, boundary > 24 ? boundary : maxChars).trim()}...';
+}
+
+int? _daysUntilTripStart(String dateRange) {
+  final startDate = _parseTripStartDate(dateRange);
+  if (startDate == null) return null;
+  final today = DateTime.now();
+  final todayDate = DateTime(today.year, today.month, today.day);
+  final tripDate = DateTime(startDate.year, startDate.month, startDate.day);
+  final days = tripDate.difference(todayDate).inDays;
+  return days < 0 ? 0 : days;
+}
+
+DateTime? _parseTripStartDate(String dateRange) {
+  final iso = RegExp(r'(\d{4}-\d{2}-\d{2})');
+  final isoMatch = iso.firstMatch(dateRange);
+  if (isoMatch != null) return DateTime.tryParse(isoMatch.group(1)!);
+
+  final months = {
+    'jan': 1,
+    'feb': 2,
+    'mar': 3,
+    'apr': 4,
+    'may': 5,
+    'jun': 6,
+    'jul': 7,
+    'aug': 8,
+    'sep': 9,
+    'oct': 10,
+    'nov': 11,
+    'dec': 12,
+  };
+  final monthDay = RegExp(r'([A-Za-z]+)\s+(\d{1,2})', caseSensitive: false);
+  final match = monthDay.firstMatch(dateRange);
+  if (match == null) return null;
+
+  final rawMonth = match.group(1)!.toLowerCase();
+  if (rawMonth.length < 3) return null;
+  final month = months[rawMonth.substring(0, 3)];
+  final day = int.tryParse(match.group(2)!);
+  if (month == null || day == null) return null;
+
+  final now = DateTime.now();
+  final parsed = DateTime(now.year, month, day);
+  final today = DateTime(now.year, now.month, now.day);
+  if (parsed.isBefore(today)) return DateTime(now.year + 1, month, day);
+  return parsed;
 }
 
 enum _TripAction { share, delete }

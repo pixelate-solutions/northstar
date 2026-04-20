@@ -8,6 +8,7 @@ import { AgentRunContext, SSEEvent, TripBrief, TripPlan } from '../agent/state';
 const completedRuns = new Map<string, { plan: TripPlan | null; error?: string }>();
 // Active run contexts, so we can stream events as they arrive
 const activeStreams = new Map<string, SSEEvent[]>();
+const runningRuns = new Map<string, AgentRunContext>();
 // Paused contexts waiting for a user's follow-up answer.
 const pausedRuns = new Map<string, AgentRunContext>();
 const pausedRunTimers = new Map<string, NodeJS.Timeout>();
@@ -33,6 +34,18 @@ function unpauseRun(runId: string): void {
   const timer = pausedRunTimers.get(runId);
   if (timer) clearTimeout(timer);
   pausedRunTimers.delete(runId);
+}
+
+function cancelRun(runId: string): boolean {
+  const ctx = runningRuns.get(runId) ?? pausedRuns.get(runId);
+  if (!ctx) return false;
+  ctx.cancelled = true;
+  ctx.abortController?.abort();
+  unpauseRun(runId);
+  const events = activeStreams.get(runId);
+  if (events) events.push({ kind: 'error', message: 'Agent run cancelled.' });
+  completedRuns.set(runId, { plan: null, error: 'Agent run cancelled.' });
+  return true;
 }
 
 export async function runRoutes(app: FastifyInstance): Promise<void> {
@@ -84,7 +97,9 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
       startedAt: new Date(),
       useMemory: useMemory !== false,
       memories: [],
+      abortController: new AbortController(),
     };
+    runningRuns.set(runId, ctx);
 
     // Run the loop asynchronously; events are buffered for the SSE stream
     (async () => {
@@ -103,10 +118,34 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
           events.push({ kind: 'error', message: (err as Error).message });
         }
         completedRuns.set(runId, { plan: null, error: (err as Error).message });
+      } finally {
+        runningRuns.delete(runId);
       }
     })();
 
     reply.send({ runId });
+  });
+
+  app.post<{ Params: { id: string } }>('/v1/runs/:id/cancel', async (req, reply) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return reply.status(401).send({ error: 'Missing authorization header' });
+    }
+
+    let userId: string;
+    try {
+      userId = await verifyJwt(authHeader.slice(7));
+    } catch {
+      return reply.status(401).send({ error: 'Invalid token' });
+    }
+
+    const { id: runId } = req.params;
+    const ctx = runningRuns.get(runId) ?? pausedRuns.get(runId);
+    if (!ctx) return reply.status(404).send({ error: 'Run not found' });
+    if (ctx.userId !== userId) return reply.status(403).send({ error: 'Run belongs to another user' });
+
+    cancelRun(runId);
+    return reply.send({ cancelled: true });
   });
 
   app.post<{
@@ -140,12 +179,15 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
     completedRuns.delete(runId);
     activeStreams.set(runId, []);
     ctx.awaitingUser = false;
+    ctx.cancelled = false;
+    ctx.abortController = new AbortController();
     ctx.messages.push({
       role: 'user',
       content: `User answered the follow-up question. Continue from the existing research and tool observations; do not restart completed lookups. Answer: ${answer}`,
     });
 
     (async () => {
+      runningRuns.set(runId, ctx);
       try {
         const resultPlan = await runAgentLoop(ctx, (event: SSEEvent) => {
           const events = activeStreams.get(runId);
@@ -161,6 +203,8 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
           events.push({ kind: 'error', message: (err as Error).message });
         }
         completedRuns.set(runId, { plan: null, error: (err as Error).message });
+      } finally {
+        runningRuns.delete(runId);
       }
     })();
 

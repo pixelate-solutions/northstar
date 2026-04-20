@@ -7,8 +7,13 @@ import 'package:northstar/providers/auth_mode_provider.dart';
 import 'package:northstar/providers/auth_provider.dart';
 import 'package:northstar/providers/biometric_provider.dart';
 import 'package:northstar/providers/trip_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('missing Clerk key does not show legacy auth screens', (
     tester,
   ) async {
@@ -36,17 +41,58 @@ void main() {
     // Let go_router and Riverpod settle.
     await tester.pumpAndSettle();
 
-    // The AI screen is the default tab; navigate to Trips to inspect saved plans.
-    expect(find.text('Where to next?'), findsOneWidget);
-    await tester.tap(find.text('Trips').last);
-    await tester.pumpAndSettle();
-
-    // The trips screen should show the first seed plan title.
+    // Trips is the default home tab and opens on the all-trips library.
+    expect(find.text('Trips'), findsWidgets);
     expect(
       find.textContaining('Barcelona'),
       findsWidgets,
-      reason: 'First seed plan should be visible on home screen',
+      reason: 'First seed plan should be visible in the trips library',
     );
+
+    await tester.tap(find.textContaining('Barcelona').first);
+    await tester.pumpAndSettle();
+    expect(find.text('All trips'), findsOneWidget);
+
+    await tester.tap(find.text('All trips'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.search_rounded), findsOneWidget);
+  });
+
+  testWidgets('trips library hides past trips until filter is enabled', (
+    tester,
+  ) async {
+    final seedPlans = TripPlan.seedPlans();
+    final plans = [
+      seedPlans.first.copyWith(
+        title: 'Future Trip',
+        dateRange: 'January 1, 2100 - January 4, 2100',
+      ),
+      seedPlans.last.copyWith(
+        title: 'Past Trip',
+        dateRange: 'January 1, 2000 - January 4, 2000',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          useClerkAuthProvider.overrideWithValue(false),
+          isSignedInProvider.overrideWithValue(true),
+          biometricAuthProvider.overrideWith(_UnlockedBiometricNotifier.new),
+          tripListProvider.overrideWith(() => _SeedTripListNotifier(plans)),
+        ],
+        child: const NorthstarApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Future Trip'), findsOneWidget);
+    expect(find.text('Past Trip'), findsNothing);
+
+    await tester.tap(find.textContaining('Show past trips').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Past Trip'), findsOneWidget);
   });
 
   testWidgets('app renders without crashing when trips are empty', (
@@ -81,8 +127,12 @@ class _UnlockedBiometricNotifier extends BiometricAuthNotifier {
 }
 
 class _SeedTripListNotifier extends TripListNotifier {
+  _SeedTripListNotifier([this._plans]);
+
+  final List<TripPlan>? _plans;
+
   @override
-  Future<List<TripPlan>> build() async => TripPlan.seedPlans();
+  Future<List<TripPlan>> build() async => _plans ?? TripPlan.seedPlans();
 }
 
 class _EmptyTripListNotifier extends TripListNotifier {

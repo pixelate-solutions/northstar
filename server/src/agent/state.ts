@@ -61,6 +61,8 @@ export interface AgentRunContext {
   useMemory: boolean;
   memories: string[];
   awaitingUser?: boolean;
+  cancelled?: boolean;
+  abortController?: AbortController;
 }
 
 export type SSEEventKind =

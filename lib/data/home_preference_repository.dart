@@ -6,7 +6,7 @@ class HomePreferenceRepository {
 
   Future<int> getHomeTab() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_homeTabKey) ?? 1;
+    return prefs.getInt(_homeTabKey) ?? 0;
   }
 
   Future<void> setHomeTab(int tab) async {

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TOOL_HANDLERS = exports.TOOL_SCHEMAS = void 0;
+exports.TOOL_HANDLERS = exports.SURGICAL_EDIT_TOOL_SCHEMAS = exports.TOOL_SCHEMAS = void 0;
 const geocode_1 = require("./geocode");
 const weather_1 = require("./weather");
 const search_places_1 = require("./search_places");
@@ -213,6 +213,13 @@ exports.TOOL_SCHEMAS = [
         },
     },
 ];
+const SURGICAL_EDIT_TOOL_NAMES = new Set([
+    'geocode_place',
+    'build_day',
+    'finalize_plan',
+    'ask_user',
+]);
+exports.SURGICAL_EDIT_TOOL_SCHEMAS = exports.TOOL_SCHEMAS.filter((tool) => SURGICAL_EDIT_TOOL_NAMES.has(tool.function.name));
 // ────────── Tool handlers ──────────
 exports.TOOL_HANDLERS = {
     async geocode_place(args) {

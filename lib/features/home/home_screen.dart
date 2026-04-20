@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,7 +8,6 @@ import '../../data/trip_repository.dart';
 import '../../providers/auth_mode_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/trip_providers.dart';
-import '../../core/theme/app_colors.dart';
 import '../../data/home_preference_repository.dart';
 import '../../providers/home_preference_provider.dart';
 import '../account/account_screen.dart';
@@ -17,7 +15,7 @@ import '../ai/ai_trip_screen.dart';
 import '../plan/plan_detail_screen.dart';
 import '../plan/plan_view.dart';
 import 'soft_backdrop.dart';
-import 'trip_rail.dart';
+import 'trip_library.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -30,17 +28,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final AgentClient _agent = AgentClient();
   late final PageController _pageController;
   PlanView _view = PlanView.overview;
+  bool _showTripDetail = false;
 
-  // Logical page indices: 0=Trips, 1=Create, 2=Profile (PageView order is fixed).
-  int _tab = 1;
+  // Logical page indices: 0=Trips, 1=Create, 2=Profile.
+  int _tab = 0;
 
   // Which logical page is the "home" (middle nav slot): 0=Trips, 1=Create.
-  int _homeTab = 1;
+  int _homeTab = 0;
 
   // Maps display nav slot → logical page index.
   // Profile is always slot 2. When homeTab=1 (Create): [Trips, Create, Profile].
   // When homeTab=0 (Trips): [Create, Trips, Profile].
   List<int> get _navOrder => _homeTab == 0 ? [1, 0, 2] : [0, 1, 2];
+
+  int _slotForLogicalTab(int logicalIndex) {
+    final slot = _navOrder.indexOf(logicalIndex);
+    return slot < 0 ? 0 : slot;
+  }
 
   TripPlan? get _selectedPlan {
     final trips = ref.read(tripListProvider).valueOrNull ?? [];
@@ -52,7 +56,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(initialPage: _tab);
+    _pageController = PageController(initialPage: _slotForLogicalTab(_tab));
     _loadHomeTab();
   }
 
@@ -65,16 +69,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _tab = savedTab; // start on the home page
     });
     if (_pageController.hasClients) {
-      _pageController.jumpToPage(savedTab);
+      _pageController.jumpToPage(_slotForLogicalTab(savedTab));
     }
   }
 
   // Selects a logical page index (0=Trips, 1=Create, 2=Profile).
   Future<void> _selectTab(int logicalIndex) async {
-    setState(() => _tab = logicalIndex);
+    setState(() {
+      _tab = logicalIndex;
+      if (logicalIndex == 0) _showTripDetail = false;
+    });
     if (!_pageController.hasClients) return;
     await _pageController.animateToPage(
-      logicalIndex,
+      _slotForLogicalTab(logicalIndex),
       duration: const Duration(milliseconds: 320),
       curve: Curves.easeOutCubic,
     );
@@ -83,8 +90,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _openAi() => _selectTab(1);
 
   Future<void> _openTrips() async {
-    setState(() => _view = PlanView.overview);
+    setState(() {
+      _view = PlanView.overview;
+      _showTripDetail = false;
+    });
     await _selectTab(0);
+  }
+
+  void _openTripDetail(int index) {
+    ref.read(selectedTripIndexProvider.notifier).state = index;
+    setState(() {
+      _view = PlanView.overview;
+      _showTripDetail = true;
+    });
+  }
+
+  void _backToTripLibrary() {
+    setState(() => _showTripDetail = false);
   }
 
   Future<TripPlan> _saveAiPlan(TripPlan plan) async {
@@ -153,6 +175,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               .clamp(0, remaining.length - 1)
               .toInt();
     ref.read(selectedTripIndexProvider.notifier).state = nextIndex;
+    setState(() => _showTripDetail = false);
     _showSnack('Trip deleted.');
   }
 
@@ -204,8 +227,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _editSelectedPlan(
     String instruction,
-    AgentEventSink onEvent,
-  ) async {
+    AgentEventSink onEvent, {
+    AgentRunController? controller,
+  }) async {
     final current = _selectedPlan;
     if (current == null) return;
     try {
@@ -213,11 +237,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         current,
         instruction,
         onEvent: onEvent,
+        controller: controller,
       );
       if (result.plan != null && mounted) {
         await ref.read(tripListProvider.notifier).savePlan(result.plan!);
       }
     } catch (e) {
+      if (e is AgentRunCancelledException) return;
       onEvent(
         AgentEvent(
           kind: AgentEventKind.complete,
@@ -233,9 +259,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.listen(homeTabProvider, (prev, next) {
       final newHome = next.valueOrNull;
       if (newHome == null || newHome == _homeTab) return;
-      setState(() => _homeTab = newHome);
+      setState(() {
+        _homeTab = newHome;
+        _tab = newHome;
+      });
       // Animate to the new home page (now in the middle slot).
-      _selectTab(newHome);
+      if (_pageController.hasClients) {
+        _pageController.animateToPage(
+          _slotForLogicalTab(newHome),
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+        );
+      }
     });
 
     final tripsAsync = ref.watch(tripListProvider);
@@ -255,121 +290,64 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ? null
             : plans[selectedIndex.clamp(0, plans.length - 1)];
 
-        return Scaffold(
-          body: PageView(
-            controller: _pageController,
-            onPageChanged: (index) => setState(() => _tab = index),
-            children: [
-              SafeArea(
-                child: Stack(
+        final pagesByLogicalTab = <int, Widget>{
+          0: SafeArea(
+            child: Stack(
+              children: [
+                if (selected != null)
+                  Positioned.fill(child: SoftBackdrop(plan: selected)),
+                Column(
                   children: [
-                    if (selected != null)
-                      Positioned.fill(child: SoftBackdrop(plan: selected)),
-                    Column(
-                      children: [
-                        _TopBar(
-                          plans: plans,
-                          selectedIndex: selectedIndex,
-                          onTripSelected: (i) {
-                            ref.read(selectedTripIndexProvider.notifier).state =
-                                i;
-                            setState(() => _view = PlanView.overview);
-                          },
-                        ),
-                        Expanded(
-                          child: plans.isEmpty
-                              ? _EmptyState(onNewTrip: _openAi)
-                              : LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    final isWide = constraints.maxWidth >= 860;
-                                    if (isWide) {
-                                      return Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          SizedBox(
-                                            width: 310,
-                                            child: TripRail(
-                                              plans: plans,
-                                              selectedIndex: selectedIndex,
-                                              onSelected: (i) {
-                                                ref
-                                                        .read(
-                                                          selectedTripIndexProvider
-                                                              .notifier,
-                                                        )
-                                                        .state =
-                                                    i;
-                                                setState(
-                                                  () =>
-                                                      _view = PlanView.overview,
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                          if (selected != null)
-                                            Expanded(
-                                              child: PlanDetailScreen(
-                                                key: ValueKey(selected.id),
-                                                plan: selected,
-                                                view: _view,
-                                                onViewChanged: (v) =>
-                                                    setState(() => _view = v),
-                                                onEdit: _editSelectedPlan,
-                                                onShare: () =>
-                                                    _shareTrip(selected),
-                                                onDelete: () =>
-                                                    _deleteTrip(selected),
-                                                onFollowUpSelected:
-                                                    _performFollowUp,
-                                                onBudgetChanged: _saveBudget,
-                                                canManage: selected.isOwnedBy(
-                                                  currentUserId,
-                                                ),
-                                              ),
-                                            ),
-                                        ],
-                                      );
-                                    }
-
-                                    if (selected == null) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    return PlanDetailScreen(
-                                      key: ValueKey(selected.id),
-                                      plan: selected,
-                                      view: _view,
-                                      onViewChanged: (v) =>
-                                          setState(() => _view = v),
-                                      onEdit: _editSelectedPlan,
-                                      onShare: () => _shareTrip(selected),
-                                      onDelete: () => _deleteTrip(selected),
-                                      onFollowUpSelected: _performFollowUp,
-                                      onBudgetChanged: _saveBudget,
-                                      canManage: selected.isOwnedBy(
-                                        currentUserId,
-                                      ),
-                                    );
-                                  },
-                                ),
-                        ),
-                      ],
+                    Expanded(
+                      child: !_showTripDetail || selected == null
+                          ? TripLibrary(
+                              plans: plans,
+                              selectedIndex: selectedIndex,
+                              onSelected: _openTripDetail,
+                              onNewTrip: _openAi,
+                            )
+                          : _TripDetailPage(
+                              plan: selected,
+                              view: _view,
+                              onBack: _backToTripLibrary,
+                              onViewChanged: (v) => setState(() => _view = v),
+                              onEdit: _editSelectedPlan,
+                              onShare: () => _shareTrip(selected),
+                              onDelete: () => _deleteTrip(selected),
+                              onFollowUpSelected: _performFollowUp,
+                              onBudgetChanged: _saveBudget,
+                              canManage: selected.isOwnedBy(currentUserId),
+                            ),
                     ),
                   ],
                 ),
-              ),
-              AiTripScreen(
-                agent: _agent,
-                plans: plans,
-                selectedPlan: selected,
-                onTripSelected: (index) {
-                  ref.read(selectedTripIndexProvider.notifier).state = index;
-                  setState(() => _view = PlanView.overview);
-                },
-                onPlanReady: _saveAiPlan,
-                onOpenTrips: _openTrips,
-              ),
-              const AccountScreen(embedded: true),
+              ],
+            ),
+          ),
+          1: AiTripScreen(
+            agent: _agent,
+            plans: plans,
+            selectedPlan: selected,
+            onTripSelected: (index) {
+              ref.read(selectedTripIndexProvider.notifier).state = index;
+              setState(() => _view = PlanView.overview);
+            },
+            onPlanReady: _saveAiPlan,
+            onOpenTrips: _openTrips,
+          ),
+          2: const AccountScreen(embedded: true),
+        };
+
+        return Scaffold(
+          body: PageView(
+            controller: _pageController,
+            onPageChanged: (slot) => setState(() => _tab = _navOrder[slot]),
+            children: [
+              for (final logicalTab in _navOrder)
+                KeyedSubtree(
+                  key: ValueKey('home-page-$logicalTab'),
+                  child: pagesByLogicalTab[logicalTab]!,
+                ),
             ],
           ),
           bottomNavigationBar: _AnimatedNavBar(
@@ -383,204 +361,80 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-// ────────── Empty state ──────────
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onNewTrip});
-  final VoidCallback onNewTrip;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: kInk,
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: const Icon(Icons.explore_rounded, color: kGold, size: 40),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Where are you\ndreaming of going?',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.w900,
-                height: 1.1,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Tell Northstar what you have in mind — it will ask follow-up questions and build your entire trip plan.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: .55),
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 28),
-            FilledButton.icon(
-              onPressed: onNewTrip,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Plan a trip'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ────────── Top bar ──────────
-
-class _TopBar extends StatefulWidget {
-  const _TopBar({
-    required this.plans,
-    required this.selectedIndex,
-    required this.onTripSelected,
+class _TripDetailPage extends StatelessWidget {
+  const _TripDetailPage({
+    required this.plan,
+    required this.view,
+    required this.onBack,
+    required this.onViewChanged,
+    required this.onEdit,
+    required this.onShare,
+    required this.onDelete,
+    required this.onFollowUpSelected,
+    required this.onBudgetChanged,
+    required this.canManage,
   });
-  final List<TripPlan> plans;
-  final int selectedIndex;
-  final ValueChanged<int> onTripSelected;
 
-  @override
-  State<_TopBar> createState() => _TopBarState();
-}
-
-class _TopBarState extends State<_TopBar> {
-  bool _expanded = false;
+  final TripPlan plan;
+  final PlanView view;
+  final VoidCallback onBack;
+  final ValueChanged<PlanView> onViewChanged;
+  final Future<void> Function(
+    String instruction,
+    AgentEventSink onEvent, {
+    AgentRunController? controller,
+  })
+  onEdit;
+  final VoidCallback onShare;
+  final VoidCallback onDelete;
+  final ValueChanged<String> onFollowUpSelected;
+  final ValueChanged<TripPlan> onBudgetChanged;
+  final bool canManage;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final hasTrips = widget.plans.isNotEmpty;
-    final selected = hasTrips
-        ? widget.plans[widget.selectedIndex.clamp(0, widget.plans.length - 1)]
-        : null;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
-      child: Column(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: hasTrips
-                      ? () => setState(() => _expanded = !_expanded)
-                      : null,
-                  child: Ink(
-                    height: 62,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: BoxDecoration(
-                      color: cs.surface.withValues(alpha: .68),
-                      border: Border.all(
-                        color: cs.surface.withValues(alpha: .72),
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: kInk,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(
-                            Icons.explore_rounded,
-                            color: kGold,
-                            size: 22,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                selected?.title ?? 'Northstar',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleLarge
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w900,
-                                      height: 1,
-                                    ),
-                              ),
-                              Text(
-                                hasTrips
-                                    ? '${widget.plans.length} saved ${widget.plans.length == 1 ? 'trip' : 'trips'}'
-                                    : 'AI travel planner',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.labelMedium
-                                    ?.copyWith(
-                                      color: cs.onSurface.withValues(
-                                        alpha: .55,
-                                      ),
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (hasTrips)
-                          AnimatedRotation(
-                            turns: _expanded ? .5 : 0,
-                            duration: const Duration(milliseconds: 180),
-                            child: const Icon(
-                              Icons.keyboard_arrow_down_rounded,
-                            ),
-                          ),
-                      ],
-                    ),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+          child: Row(
+            children: [
+              TextButton.icon(
+                onPressed: onBack,
+                icon: const Icon(Icons.arrow_back_rounded),
+                label: const Text('All trips'),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  plan.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: cs.onSurface.withValues(alpha: .58),
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
-            ),
+            ],
           ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            child: _expanded
-                ? SizedBox(
-                    height: 132,
-                    child: ListView.separated(
-                      padding: const EdgeInsets.only(top: 10),
-                      scrollDirection: Axis.horizontal,
-                      itemCount: widget.plans.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 10),
-                      itemBuilder: (_, i) => SizedBox(
-                        width: 250,
-                        child: TripCard(
-                          plan: widget.plans[i],
-                          selected: i == widget.selectedIndex,
-                          onTap: () {
-                            widget.onTripSelected(i);
-                            setState(() => _expanded = false);
-                          },
-                        ),
-                      ),
-                    ),
-                  )
-                : const SizedBox.shrink(),
+        ),
+        Expanded(
+          child: PlanDetailScreen(
+            key: ValueKey(plan.id),
+            plan: plan,
+            view: view,
+            onViewChanged: onViewChanged,
+            onEdit: onEdit,
+            onShare: onShare,
+            onDelete: onDelete,
+            onFollowUpSelected: onFollowUpSelected,
+            onBudgetChanged: onBudgetChanged,
+            canManage: canManage,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

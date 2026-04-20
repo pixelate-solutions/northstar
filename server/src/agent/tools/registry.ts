@@ -218,6 +218,17 @@ export const TOOL_SCHEMAS: OpenAI.Chat.ChatCompletionTool[] = [
   },
 ];
 
+const SURGICAL_EDIT_TOOL_NAMES = new Set([
+  'geocode_place',
+  'build_day',
+  'finalize_plan',
+  'ask_user',
+]);
+
+export const SURGICAL_EDIT_TOOL_SCHEMAS = TOOL_SCHEMAS.filter((tool) =>
+  SURGICAL_EDIT_TOOL_NAMES.has(tool.function.name),
+);
+
 // ────────── Tool handlers ──────────
 
 export const TOOL_HANDLERS: Record<string, ToolHandler> = {

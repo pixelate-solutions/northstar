@@ -65,6 +65,7 @@ class _FakeAgentClient extends AgentClient {
   Future<AgentRunResult> createPlan(
     TripBrief brief, {
     AgentEventSink? onEvent,
+    AgentRunController? controller,
   }) async {
     const event = AgentEvent(
       kind: AgentEventKind.model,
@@ -95,7 +96,7 @@ class _PlanHarnessState extends State<_PlanHarness> {
         plan: widget.plan,
         view: view,
         onViewChanged: (next) => setState(() => view = next),
-        onEdit: (_, onEvent) async {
+        onEdit: (_, onEvent, {controller}) async {
           onEvent(
             const AgentEvent(
               kind: AgentEventKind.complete,

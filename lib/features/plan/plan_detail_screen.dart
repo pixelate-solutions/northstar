@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../agent/agent_client.dart';
 import '../../models/trip_plan.dart';
 import '../../models/trip_day.dart';
 import '../../models/agent_event.dart';
@@ -26,7 +27,11 @@ class PlanDetailScreen extends StatefulWidget {
   final TripPlan plan;
   final PlanView view;
   final ValueChanged<PlanView> onViewChanged;
-  final Future<void> Function(String instruction, AgentEventSink onEvent)
+  final Future<void> Function(
+    String instruction,
+    AgentEventSink onEvent, {
+    AgentRunController? controller,
+  })
   onEdit;
   final VoidCallback? onShare;
   final VoidCallback? onDelete;
