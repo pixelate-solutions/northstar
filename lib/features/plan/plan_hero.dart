@@ -206,8 +206,13 @@ int? _daysUntilTripStart(String dateRange) {
 }
 
 DateTime? _parseTripStartDate(String dateRange) {
+  final normalized = dateRange
+      .replaceAll(RegExp(r'[–—]'), '-')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
   final iso = RegExp(r'(\d{4}-\d{2}-\d{2})');
-  final isoMatch = iso.firstMatch(dateRange);
+  final isoMatch = iso.firstMatch(normalized);
   if (isoMatch != null) return DateTime.tryParse(isoMatch.group(1)!);
 
   final months = {
@@ -224,8 +229,11 @@ DateTime? _parseTripStartDate(String dateRange) {
     'nov': 11,
     'dec': 12,
   };
-  final monthDay = RegExp(r'([A-Za-z]+)\s+(\d{1,2})', caseSensitive: false);
-  final match = monthDay.firstMatch(dateRange);
+  final monthDayYear = RegExp(
+    r'([A-Za-z]+)\s+(\d{1,2})(?:,?\s*(\d{4}))?',
+    caseSensitive: false,
+  );
+  final match = monthDayYear.firstMatch(normalized);
   if (match == null) return null;
 
   final rawMonth = match.group(1)!.toLowerCase();
@@ -233,6 +241,14 @@ DateTime? _parseTripStartDate(String dateRange) {
   final month = months[rawMonth.substring(0, 3)];
   final day = int.tryParse(match.group(2)!);
   if (month == null || day == null) return null;
+
+  final explicitYears = RegExp(
+    r'\b(19\d{2}|20\d{2}|21\d{2})\b',
+  ).allMatches(normalized).map((m) => int.parse(m.group(1)!)).toList();
+  final explicitYear =
+      int.tryParse(match.group(3) ?? '') ??
+      (explicitYears.isNotEmpty ? explicitYears.last : null);
+  if (explicitYear != null) return DateTime(explicitYear, month, day);
 
   final now = DateTime.now();
   final parsed = DateTime(now.year, month, day);

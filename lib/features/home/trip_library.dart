@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/trip_date_utils.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/trip_plan.dart';
 import 'trip_rail.dart';
@@ -26,7 +27,7 @@ class TripLibrary extends StatefulWidget {
 
 class _TripLibraryState extends State<TripLibrary> {
   final _searchController = TextEditingController();
-  TripLibraryView _view = TripLibraryView.grid;
+  TripLibraryView _view = TripLibraryView.list;
   bool _showPastTrips = false;
   String _query = '';
 
@@ -39,7 +40,7 @@ class _TripLibraryState extends State<TripLibrary> {
   @override
   Widget build(BuildContext context) {
     final entries = _filteredEntries;
-    final hiddenPastCount = widget.plans.where(_isPastTrip).length;
+    final hiddenPastCount = widget.plans.where(isPastTrip).length;
 
     return CustomScrollView(
       slivers: [
@@ -208,6 +209,8 @@ class _TripLibraryState extends State<TripLibrary> {
                     return TripCard(
                       plan: entry.plan,
                       selected: false,
+                      isPast: entry.isPast,
+                      badgeLabel: entry.isPast ? 'Past' : null,
                       onTap: () => widget.onSelected(entry.originalIndex),
                     );
                   }, childCount: entries.length),
@@ -226,6 +229,7 @@ class _TripLibraryState extends State<TripLibrary> {
                 return _TripListTile(
                   plan: entry.plan,
                   selected: false,
+                  isPast: entry.isPast,
                   onTap: () => widget.onSelected(entry.originalIndex),
                 );
               },
@@ -240,11 +244,12 @@ class _TripLibraryState extends State<TripLibrary> {
     final entries = <_TripEntry>[];
     for (var i = 0; i < widget.plans.length; i++) {
       final plan = widget.plans[i];
-      if (!_showPastTrips && _isPastTrip(plan)) continue;
+      final isPast = isPastTrip(plan);
+      if (!_showPastTrips && isPast) continue;
       if (normalizedQuery.isNotEmpty && !_matchesQuery(plan, normalizedQuery)) {
         continue;
       }
-      entries.add(_TripEntry(originalIndex: i, plan: plan));
+      entries.add(_TripEntry(originalIndex: i, plan: plan, isPast: isPast));
     }
     return entries;
   }
@@ -265,18 +270,33 @@ class _TripListTile extends StatelessWidget {
   const _TripListTile({
     required this.plan,
     required this.selected,
+    required this.isPast,
     required this.onTap,
   });
 
   final TripPlan plan;
   final bool selected;
+  final bool isPast;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final backgroundColor = selected
+        ? kInk
+        : isPast
+        ? cs.surfaceContainerHighest.withValues(alpha: .68)
+        : cs.surface.withValues(alpha: .82);
+    final titleColor = selected
+        ? Colors.white
+        : isPast
+        ? cs.onSurface.withValues(alpha: .82)
+        : cs.onSurface;
+    final detailColor = selected
+        ? Colors.white70
+        : cs.onSurface.withValues(alpha: isPast ? .48 : .58);
     return Material(
-      color: selected ? kInk : cs.surface.withValues(alpha: .82),
+      color: backgroundColor,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -291,6 +311,8 @@ class _TripListTile extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: selected
                       ? Colors.white.withValues(alpha: .1)
+                      : isPast
+                      ? cs.surface.withValues(alpha: .95)
                       : kMint.withValues(alpha: .9),
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -298,7 +320,11 @@ class _TripListTile extends StatelessWidget {
                   plan.destinations.length > 1
                       ? Icons.route_outlined
                       : Icons.place_outlined,
-                  color: selected ? kGold : kForest,
+                  color: selected
+                      ? kGold
+                      : isPast
+                      ? cs.onSurface.withValues(alpha: .62)
+                      : kForest,
                 ),
               ),
               const SizedBox(width: 12),
@@ -311,7 +337,7 @@ class _TripListTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: selected ? Colors.white : cs.onSurface,
+                        color: titleColor,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -321,15 +347,33 @@ class _TripListTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: selected
-                            ? Colors.white70
-                            : cs.onSurface.withValues(alpha: .58),
+                        color: detailColor,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
                 ),
               ),
+              if (isPast) ...[
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: cs.primary.withValues(alpha: .08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Past',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: cs.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(width: 10),
               Icon(
                 Icons.chevron_right_rounded,
@@ -445,82 +489,13 @@ class _NoMatchingTrips extends StatelessWidget {
 }
 
 class _TripEntry {
-  const _TripEntry({required this.originalIndex, required this.plan});
+  const _TripEntry({
+    required this.originalIndex,
+    required this.plan,
+    required this.isPast,
+  });
 
   final int originalIndex;
   final TripPlan plan;
-}
-
-bool _isPastTrip(TripPlan plan) {
-  final endDate = _parseTripEndDate(plan.dateRange);
-  if (endDate == null) return false;
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-  final lastDay = DateTime(endDate.year, endDate.month, endDate.day);
-  return lastDay.isBefore(today);
-}
-
-DateTime? _parseTripEndDate(String dateRange) {
-  final normalized = dateRange
-      .replaceAll(RegExp(r'[–—]'), '-')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-  if (normalized.isEmpty) return null;
-
-  final isoMatches = RegExp(r'(\d{4}-\d{2}-\d{2})').allMatches(normalized);
-  if (isoMatches.isNotEmpty) {
-    return DateTime.tryParse(isoMatches.last.group(1)!);
-  }
-
-  final compactRange = RegExp(
-    r'([A-Za-z]{3,9})\s+(\d{1,2})(?:,\s*\d{4})?\s*-\s*(?:([A-Za-z]{3,9})\s+)?(\d{1,2})(?:,?\s*(\d{4}))?',
-    caseSensitive: false,
-  ).firstMatch(normalized);
-  if (compactRange != null) {
-    final endMonthName = compactRange.group(3) ?? compactRange.group(1)!;
-    final month = _monthNumber(endMonthName);
-    final day = int.tryParse(compactRange.group(4)!);
-    final year =
-        int.tryParse(compactRange.group(5) ?? '') ?? _lastYear(normalized);
-    if (month != null && day != null) return DateTime(year, month, day);
-  }
-
-  final monthDayYear = RegExp(
-    r'([A-Za-z]{3,9})\s+(\d{1,2})(?:,?\s*(\d{4}))?',
-    caseSensitive: false,
-  );
-  final matches = monthDayYear.allMatches(normalized).toList();
-  if (matches.isEmpty) return null;
-
-  final last = matches.last;
-  final month = _monthNumber(last.group(1)!);
-  final day = int.tryParse(last.group(2)!);
-  final year = int.tryParse(last.group(3) ?? '') ?? _lastYear(normalized);
-  if (month == null || day == null) return null;
-  return DateTime(year, month, day);
-}
-
-int _lastYear(String value) {
-  final years = RegExp(r'\b(19\d{2}|20\d{2}|21\d{2})\b').allMatches(value);
-  if (years.isNotEmpty) return int.parse(years.last.group(1)!);
-  return DateTime.now().year;
-}
-
-int? _monthNumber(String value) {
-  final key = value.toLowerCase();
-  if (key.length < 3) return null;
-  return const {
-    'jan': 1,
-    'feb': 2,
-    'mar': 3,
-    'apr': 4,
-    'may': 5,
-    'jun': 6,
-    'jul': 7,
-    'aug': 8,
-    'sep': 9,
-    'oct': 10,
-    'nov': 11,
-    'dec': 12,
-  }[key.substring(0, 3)];
+  final bool isPast;
 }

@@ -2,6 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.dailyTokenLimit = exports.supabase = void 0;
 exports.getDailyUsage = getDailyUsage;
+exports.getSubscriptionState = getSubscriptionState;
+exports.syncSubscriptionPurchase = syncSubscriptionPurchase;
+exports.redeemLifetimePromoCode = redeemLifetimePromoCode;
 exports.incrementDailyUsage = incrementDailyUsage;
 exports.savePlan = savePlan;
 exports.loadTravelMemories = loadTravelMemories;
@@ -48,6 +51,98 @@ async function getDailyUsage(userId) {
         resetAt: resetAtUtc(now),
         usageDate,
     };
+}
+function normalizeSubscription(row) {
+    if (!row) {
+        return {
+            status: 'inactive',
+            billingPeriod: null,
+            source: null,
+            store: null,
+            productId: null,
+            purchaseId: null,
+            isEntitled: false,
+            isLifetime: false,
+            hasRedeemedPromo: false,
+            trialStartedAt: null,
+            trialEndsAt: null,
+            updatedAt: null,
+        };
+    }
+    return {
+        status: row.status,
+        billingPeriod: row.billing_period,
+        source: row.source,
+        store: row.store,
+        productId: row.product_id,
+        purchaseId: row.purchase_id,
+        isEntitled: row.status === 'active' || row.status === 'lifetime',
+        isLifetime: row.status === 'lifetime' || row.billing_period == 'lifetime',
+        hasRedeemedPromo: row.promo_code_redeemed_at != null,
+        trialStartedAt: row.trial_started_at,
+        trialEndsAt: row.trial_ends_at,
+        updatedAt: row.updated_at,
+    };
+}
+async function getSubscriptionState(userId) {
+    const { data, error } = await exports.supabase
+        .from('user_subscriptions')
+        .select('user_id, status, billing_period, source, store, product_id, purchase_id, trial_started_at, trial_ends_at, promo_code_redeemed_at, updated_at')
+        .eq('user_id', userId)
+        .maybeSingle();
+    if (error)
+        throw new Error(error.message);
+    return normalizeSubscription((data ?? null));
+}
+async function syncSubscriptionPurchase({ userId, billingPeriod, productId, purchaseId, purchaseToken, rawVerificationData, store, }) {
+    const now = new Date();
+    const trialEndsAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const { data: current, error: fetchError } = await exports.supabase
+        .from('user_subscriptions')
+        .select('status, billing_period, trial_started_at, trial_ends_at, promo_code_redeemed_at')
+        .eq('user_id', userId)
+        .maybeSingle();
+    if (fetchError)
+        throw new Error(fetchError.message);
+    if (current?.status === 'lifetime' || current?.billing_period === 'lifetime') {
+        return getSubscriptionState(userId);
+    }
+    const { error } = await exports.supabase.from('user_subscriptions').upsert({
+        user_id: userId,
+        status: 'active',
+        billing_period: billingPeriod,
+        source: 'in_app_purchase',
+        store,
+        product_id: productId,
+        purchase_id: purchaseId,
+        purchase_token: purchaseToken,
+        raw_verification_data: rawVerificationData,
+        trial_started_at: current?.trial_started_at ?? now.toISOString(),
+        trial_ends_at: current?.trial_ends_at ?? trialEndsAt.toISOString(),
+        promo_code_redeemed_at: current?.promo_code_redeemed_at ?? null,
+        updated_at: now.toISOString(),
+    });
+    if (error)
+        throw new Error(error.message);
+    return getSubscriptionState(userId);
+}
+async function redeemLifetimePromoCode(userId) {
+    const now = new Date().toISOString();
+    const { error } = await exports.supabase.from('user_subscriptions').upsert({
+        user_id: userId,
+        status: 'lifetime',
+        billing_period: 'lifetime',
+        source: 'promo',
+        store: 'northstar',
+        product_id: 'northstar_lifetime_promo',
+        trial_started_at: null,
+        trial_ends_at: null,
+        promo_code_redeemed_at: now,
+        updated_at: now,
+    });
+    if (error)
+        throw new Error(error.message);
+    return getSubscriptionState(userId);
 }
 async function incrementDailyUsage(userId, tokenDelta) {
     if (tokenDelta <= 0)

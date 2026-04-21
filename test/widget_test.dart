@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:northstar/data/billing_repository.dart';
+import 'package:northstar/models/subscription_status.dart';
 import 'package:northstar/models/trip_plan.dart';
 import 'package:northstar/northstar_app.dart';
 import 'package:northstar/providers/auth_mode_provider.dart';
 import 'package:northstar/providers/auth_provider.dart';
 import 'package:northstar/providers/biometric_provider.dart';
+import 'package:northstar/providers/billing_provider.dart';
 import 'package:northstar/providers/trip_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -32,6 +35,9 @@ void main() {
           useClerkAuthProvider.overrideWithValue(false),
           isSignedInProvider.overrideWithValue(true),
           biometricAuthProvider.overrideWith(_UnlockedBiometricNotifier.new),
+          billingRepositoryProvider.overrideWithValue(
+            _EntitledBillingRepository(),
+          ),
           tripListProvider.overrideWith(() => _SeedTripListNotifier()),
         ],
         child: const NorthstarApp(),
@@ -79,6 +85,9 @@ void main() {
           useClerkAuthProvider.overrideWithValue(false),
           isSignedInProvider.overrideWithValue(true),
           biometricAuthProvider.overrideWith(_UnlockedBiometricNotifier.new),
+          billingRepositoryProvider.overrideWithValue(
+            _EntitledBillingRepository(),
+          ),
           tripListProvider.overrideWith(() => _SeedTripListNotifier(plans)),
         ],
         child: const NorthstarApp(),
@@ -104,6 +113,9 @@ void main() {
           useClerkAuthProvider.overrideWithValue(false),
           isSignedInProvider.overrideWithValue(true),
           biometricAuthProvider.overrideWith(_UnlockedBiometricNotifier.new),
+          billingRepositoryProvider.overrideWithValue(
+            _EntitledBillingRepository(),
+          ),
           tripListProvider.overrideWith(() => _EmptyTripListNotifier()),
         ],
         child: const NorthstarApp(),
@@ -138,4 +150,17 @@ class _SeedTripListNotifier extends TripListNotifier {
 class _EmptyTripListNotifier extends TripListNotifier {
   @override
   Future<List<TripPlan>> build() async => [];
+}
+
+class _EntitledBillingRepository extends BillingRepository {
+  @override
+  Future<SubscriptionStatus> fetchSubscription() async {
+    return SubscriptionStatus.fromJson(const {
+      'status': 'active',
+      'billingPeriod': 'monthly',
+      'isEntitled': true,
+      'isLifetime': false,
+      'hasRedeemedPromo': false,
+    });
+  }
 }

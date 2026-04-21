@@ -152,24 +152,50 @@ class TripCard extends StatelessWidget {
     required this.plan,
     required this.selected,
     required this.onTap,
+    this.isPast = false,
+    this.badgeLabel,
   });
 
   final TripPlan plan;
   final bool selected;
   final VoidCallback onTap;
+  final bool isPast;
+  final String? badgeLabel;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final backgroundColor = selected
+        ? kInk
+        : isPast
+        ? cs.surfaceContainerHighest.withValues(alpha: .68)
+        : cs.surface.withValues(alpha: .74);
+    final borderColor = selected
+        ? kInk
+        : isPast
+        ? cs.outline.withValues(alpha: .28)
+        : cs.surface.withValues(alpha: .82);
+    final titleColor = selected
+        ? Colors.white
+        : isPast
+        ? cs.onSurface.withValues(alpha: .82)
+        : cs.onSurface;
+    final detailColor = selected
+        ? Colors.white70
+        : cs.onSurface.withValues(alpha: isPast ? .48 : .55);
+    final iconColor = selected
+        ? kGold
+        : isPast
+        ? cs.onSurface.withValues(alpha: .62)
+        : kForest;
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
-        color: selected ? kInk : cs.surface.withValues(alpha: .74),
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: selected ? kInk : cs.surface.withValues(alpha: .82),
-        ),
+        border: Border.all(color: borderColor),
         boxShadow: [
           BoxShadow(
             color: kInk.withValues(alpha: selected ? .16 : .06),
@@ -194,7 +220,7 @@ class TripCard extends StatelessWidget {
                       plan.destinations.length > 1
                           ? Icons.route_outlined
                           : Icons.place_outlined,
-                      color: selected ? kGold : kForest,
+                      color: iconColor,
                       size: 20,
                     ),
                     const SizedBox(width: 8),
@@ -205,13 +231,40 @@ class TripCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(
-                              color: selected
-                                  ? Colors.white70
-                                  : cs.onSurface.withValues(alpha: .55),
+                              color: detailColor,
                               fontWeight: FontWeight.w800,
                             ),
                       ),
                     ),
+                    if (badgeLabel != null) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? Colors.white.withValues(alpha: .12)
+                              : cs.primary.withValues(
+                                  alpha: isPast ? .08 : .12,
+                                ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          badgeLabel!,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: selected
+                                    ? Colors.white
+                                    : cs.primary.withValues(
+                                        alpha: isPast ? .82 : 1,
+                                      ),
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const Spacer(),
@@ -220,7 +273,7 @@ class TripCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: selected ? Colors.white : cs.onSurface,
+                    color: titleColor,
                     fontWeight: FontWeight.w900,
                     height: 1.08,
                   ),
@@ -231,9 +284,7 @@ class TripCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: selected
-                        ? Colors.white70
-                        : cs.onSurface.withValues(alpha: .55),
+                    color: detailColor,
                     fontWeight: FontWeight.w800,
                   ),
                 ),

@@ -39,6 +39,38 @@ export interface DailyUsage {
   usageDate: string;
 }
 
+export type BillingPeriod = 'monthly' | 'annual' | 'lifetime';
+type SubscriptionStatus = 'inactive' | 'active' | 'lifetime' | 'canceled';
+
+interface SubscriptionRow {
+  user_id: string;
+  status: SubscriptionStatus;
+  billing_period: BillingPeriod | null;
+  source: string | null;
+  store: string | null;
+  product_id: string | null;
+  purchase_id: string | null;
+  trial_started_at: string | null;
+  trial_ends_at: string | null;
+  promo_code_redeemed_at: string | null;
+  updated_at: string | null;
+}
+
+export interface SubscriptionState {
+  status: SubscriptionStatus;
+  billingPeriod: BillingPeriod | null;
+  source: string | null;
+  store: string | null;
+  productId: string | null;
+  purchaseId: string | null;
+  isEntitled: boolean;
+  isLifetime: boolean;
+  hasRedeemedPromo: boolean;
+  trialStartedAt: string | null;
+  trialEndsAt: string | null;
+  updatedAt: string | null;
+}
+
 export async function getDailyUsage(userId: string): Promise<DailyUsage> {
   const now = new Date();
   const usageDate = usageDateUtc(now);
@@ -57,6 +89,129 @@ export async function getDailyUsage(userId: string): Promise<DailyUsage> {
     resetAt: resetAtUtc(now),
     usageDate,
   };
+}
+
+function normalizeSubscription(row: SubscriptionRow | null): SubscriptionState {
+  if (!row) {
+    return {
+      status: 'inactive',
+      billingPeriod: null,
+      source: null,
+      store: null,
+      productId: null,
+      purchaseId: null,
+      isEntitled: false,
+      isLifetime: false,
+      hasRedeemedPromo: false,
+      trialStartedAt: null,
+      trialEndsAt: null,
+      updatedAt: null,
+    };
+  }
+
+  return {
+    status: row.status,
+    billingPeriod: row.billing_period,
+    source: row.source,
+    store: row.store,
+    productId: row.product_id,
+    purchaseId: row.purchase_id,
+    isEntitled: row.status === 'active' || row.status === 'lifetime',
+    isLifetime: row.status === 'lifetime' || row.billing_period == 'lifetime',
+    hasRedeemedPromo: row.promo_code_redeemed_at != null,
+    trialStartedAt: row.trial_started_at,
+    trialEndsAt: row.trial_ends_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function getSubscriptionState(
+  userId: string,
+): Promise<SubscriptionState> {
+  const { data, error } = await supabase
+    .from('user_subscriptions')
+    .select(
+      'user_id, status, billing_period, source, store, product_id, purchase_id, trial_started_at, trial_ends_at, promo_code_redeemed_at, updated_at',
+    )
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return normalizeSubscription((data ?? null) as SubscriptionRow | null);
+}
+
+interface PurchaseSyncInput {
+  userId: string;
+  billingPeriod: Exclude<BillingPeriod, 'lifetime'>;
+  productId: string;
+  purchaseId?: string | null;
+  purchaseToken?: string | null;
+  rawVerificationData?: string | null;
+  store?: string | null;
+}
+
+export async function syncSubscriptionPurchase({
+  userId,
+  billingPeriod,
+  productId,
+  purchaseId,
+  purchaseToken,
+  rawVerificationData,
+  store,
+}: PurchaseSyncInput): Promise<SubscriptionState> {
+  const now = new Date();
+  const trialEndsAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const { data: current, error: fetchError } = await supabase
+    .from('user_subscriptions')
+    .select('status, billing_period, trial_started_at, trial_ends_at, promo_code_redeemed_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (fetchError) throw new Error(fetchError.message);
+  if (current?.status === 'lifetime' || current?.billing_period === 'lifetime') {
+    return getSubscriptionState(userId);
+  }
+
+  const { error } = await supabase.from('user_subscriptions').upsert({
+    user_id: userId,
+    status: 'active',
+    billing_period: billingPeriod,
+    source: 'in_app_purchase',
+    store,
+    product_id: productId,
+    purchase_id: purchaseId,
+    purchase_token: purchaseToken,
+    raw_verification_data: rawVerificationData,
+    trial_started_at: current?.trial_started_at ?? now.toISOString(),
+    trial_ends_at: current?.trial_ends_at ?? trialEndsAt.toISOString(),
+    promo_code_redeemed_at: current?.promo_code_redeemed_at ?? null,
+    updated_at: now.toISOString(),
+  });
+
+  if (error) throw new Error(error.message);
+  return getSubscriptionState(userId);
+}
+
+export async function redeemLifetimePromoCode(
+  userId: string,
+): Promise<SubscriptionState> {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from('user_subscriptions').upsert({
+    user_id: userId,
+    status: 'lifetime',
+    billing_period: 'lifetime',
+    source: 'promo',
+    store: 'northstar',
+    product_id: 'northstar_lifetime_promo',
+    trial_started_at: null,
+    trial_ends_at: null,
+    promo_code_redeemed_at: now,
+    updated_at: now,
+  });
+
+  if (error) throw new Error(error.message);
+  return getSubscriptionState(userId);
 }
 
 export async function incrementDailyUsage(

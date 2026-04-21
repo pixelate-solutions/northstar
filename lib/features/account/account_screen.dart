@@ -5,13 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/auth_repository.dart';
 import '../../data/usage_repository.dart';
+import '../../models/subscription_status.dart';
 import '../../providers/auth_mode_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/billing_provider.dart';
 import '../../providers/home_preference_provider.dart';
 import '../../providers/usage_provider.dart';
+import '../billing/billing_links.dart';
 import '../auth/biometric_preference_tile.dart';
 
 class AccountScreen extends ConsumerStatefulWidget {
@@ -186,11 +190,38 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     if (mounted) context.go('/welcome');
   }
 
+  Future<void> _openManageBilling() async {
+    final uri = billingManagementUri();
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  String _paymentSummary() {
+    final membership = ref.read(billingControllerProvider).membership;
+    if (membership == null || !membership.isEntitled) {
+      return 'No active subscription.';
+    }
+    if (membership.isLifetime) {
+      return 'Lifetime membership active.';
+    }
+    switch (membership.billingPeriod) {
+      case null:
+        return 'Subscription active.';
+      case BillingPeriod.monthly:
+        return 'Monthly subscription active.';
+      case BillingPeriod.annual:
+        return 'Annual subscription active.';
+      case BillingPeriod.lifetime:
+        return 'Lifetime membership active.';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (ref.watch(useClerkAuthProvider)) return _buildClerkAccount(context);
 
     final user = ref.watch(currentUserProvider);
+    final billing = ref.watch(billingControllerProvider);
     final usageLimitAsync = ref.watch(usageLimitProvider);
     final email = user?.email ?? '';
     final avatarUrl = _avatarCtrl.text.trim();
@@ -341,16 +372,31 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
             title: 'Payments',
             children: [
               Text(
-                'No active subscription.',
+                _paymentSummary(),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: cs.onSurface.withValues(alpha: .62),
                 ),
               ),
+              if (billing.membership?.trialEndsAt != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Trial started. Billing begins after the 7-day intro period in the store.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: cs.onSurface.withValues(alpha: .54),
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               OutlinedButton.icon(
-                onPressed: null,
+                onPressed: billing.membership?.isEntitled == true
+                    ? _openManageBilling
+                    : () => context.go('/paywall'),
                 icon: const Icon(Icons.credit_card_rounded),
-                label: const Text('Manage billing'),
+                label: Text(
+                  billing.membership?.isEntitled == true
+                      ? 'Manage billing'
+                      : 'Choose a plan',
+                ),
               ),
             ],
           ),
@@ -423,6 +469,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   Widget _buildClerkAccount(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = cs.brightness == Brightness.dark;
+    final billing = ref.watch(billingControllerProvider);
     final homeTabAsync = ref.watch(homeTabProvider);
     final offlineModeAsync = ref.watch(offlineModeProvider);
     final usageLimitAsync = ref.watch(usageLimitProvider);
@@ -539,16 +586,32 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        'No active subscription.',
+                        _paymentSummary(),
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: cs.onSurface.withValues(alpha: .62),
                         ),
                       ),
+                      if (billing.membership?.trialEndsAt != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Trial started. Billing begins after the 7-day intro period in the store.',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: cs.onSurface.withValues(alpha: .54),
+                              ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
-                        onPressed: null,
+                        onPressed: billing.membership?.isEntitled == true
+                            ? _openManageBilling
+                            : () => context.go('/paywall'),
                         icon: const Icon(Icons.credit_card_rounded),
-                        label: const Text('Manage billing'),
+                        label: Text(
+                          billing.membership?.isEntitled == true
+                              ? 'Manage billing'
+                              : 'Choose a plan',
+                        ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: kForest,
                           side: const BorderSide(color: kForest),

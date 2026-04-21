@@ -74,10 +74,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   // Selects a logical page index (0=Trips, 1=Create, 2=Profile).
-  Future<void> _selectTab(int logicalIndex) async {
+  Future<void> _selectTab(
+    int logicalIndex, {
+    bool preserveTripDetail = false,
+  }) async {
     setState(() {
       _tab = logicalIndex;
-      if (logicalIndex == 0) _showTripDetail = false;
+      if (logicalIndex == 0 && !preserveTripDetail) _showTripDetail = false;
     });
     if (!_pageController.hasClients) return;
     await _pageController.animateToPage(
@@ -95,6 +98,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _showTripDetail = false;
     });
     await _selectTab(0);
+  }
+
+  Future<void> _openSpecificTrip(TripPlan plan) async {
+    final plans = ref.read(tripListProvider).valueOrNull ?? [];
+    final index = plans.indexWhere((p) => p.id == plan.id);
+    if (index >= 0) {
+      ref.read(selectedTripIndexProvider.notifier).state = index;
+    }
+    setState(() {
+      _view = PlanView.overview;
+      _showTripDetail = true;
+    });
+    await _selectTab(0, preserveTripDetail: true);
   }
 
   void _openTripDetail(int index) {
@@ -334,6 +350,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             },
             onPlanReady: _saveAiPlan,
             onOpenTrips: _openTrips,
+            onOpenTrip: (plan) => _openSpecificTrip(plan),
           ),
           2: const AccountScreen(embedded: true),
         };

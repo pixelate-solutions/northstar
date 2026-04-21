@@ -48,6 +48,7 @@ dependencies:
   json_annotation: ^4.9.0
   clerk_flutter: ^0.0.14-beta
   image_picker: ^1.2.1
+  in_app_purchase: ^3.2.3
   url_launcher: ^6.3.1
 
 dev_dependencies:

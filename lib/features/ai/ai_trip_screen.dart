@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../agent/agent_client.dart';
+import '../../core/utils/trip_date_utils.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/agent_event.dart';
 import '../../models/trip_brief.dart';
@@ -14,6 +15,7 @@ class AiTripScreen extends StatefulWidget {
     required this.onTripSelected,
     required this.onPlanReady,
     required this.onOpenTrips,
+    required this.onOpenTrip,
   });
 
   final AgentClient agent;
@@ -22,6 +24,7 @@ class AiTripScreen extends StatefulWidget {
   final ValueChanged<int> onTripSelected;
   final Future<TripPlan> Function(TripPlan plan) onPlanReady;
   final VoidCallback onOpenTrips;
+  final ValueChanged<TripPlan> onOpenTrip;
 
   @override
   State<AiTripScreen> createState() => _AiTripScreenState();
@@ -372,6 +375,7 @@ class _AiTripScreenState extends State<AiTripScreen>
                           onRun: _question == null ? _run : _answerFollowUp,
                           onCancelFollowUp: _cancelFollowUp,
                           onOpenTrips: widget.onOpenTrips,
+                          onOpenTrip: widget.onOpenTrip,
                         ),
                 ),
               ],
@@ -471,6 +475,7 @@ class _IdlePanel extends StatelessWidget {
     required this.onRun,
     required this.onCancelFollowUp,
     required this.onOpenTrips,
+    required this.onOpenTrip,
   });
 
   final bool isEditing;
@@ -488,6 +493,7 @@ class _IdlePanel extends StatelessWidget {
   final VoidCallback onRun;
   final VoidCallback onCancelFollowUp;
   final VoidCallback onOpenTrips;
+  final ValueChanged<TripPlan> onOpenTrip;
 
   @override
   Widget build(BuildContext context) {
@@ -568,7 +574,10 @@ class _IdlePanel extends StatelessWidget {
         ],
         if (readyPlan != null) ...[
           const SizedBox(height: 18),
-          _ReadyPanel(plan: readyPlan!, onOpenTrips: onOpenTrips),
+          _ReadyPanel(
+            plan: readyPlan!,
+            onOpenTrip: () => onOpenTrip(readyPlan!),
+          ),
         ] else if (selectedTripId == 'new' && question == null) ...[
           const SizedBox(height: 16),
           _ExamplePrompts(input: input, onRun: onRun),
@@ -630,7 +639,7 @@ class _FollowUpThread extends StatelessWidget {
   }
 }
 
-class _TripPicker extends StatelessWidget {
+class _TripPicker extends StatefulWidget {
   const _TripPicker({
     required this.plans,
     required this.selectedTripId,
@@ -642,43 +651,106 @@ class _TripPicker extends StatelessWidget {
   final ValueChanged<String?> onChanged;
 
   @override
+  State<_TripPicker> createState() => _TripPickerState();
+}
+
+class _TripPickerState extends State<_TripPicker> {
+  bool _showPastTrips = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _showPastTrips = _selectedPlanIsPast;
+  }
+
+  @override
+  void didUpdateWidget(covariant _TripPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_selectedPlanIsPast && !_showPastTrips) {
+      setState(() => _showPastTrips = true);
+    }
+  }
+
+  bool get _selectedPlanIsPast {
+    if (widget.selectedTripId == 'new') return false;
+    for (final plan in widget.plans) {
+      if (plan.id == widget.selectedTripId) return isPastTrip(plan);
+    }
+    return false;
+  }
+
+  List<TripPlan> get _visiblePlans {
+    if (_showPastTrips) return widget.plans;
+    return widget.plans.where((plan) => !isPastTrip(plan)).toList();
+  }
+
+  int get _hiddenPastCount => widget.plans.where(isPastTrip).length;
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: cs.surface.withValues(alpha: .88),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: cs.onSurface.withValues(alpha: .10)),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: selectedTripId,
-          borderRadius: BorderRadius.circular(18),
-          isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded),
-          onChanged: onChanged,
-          items: [
-            const DropdownMenuItem(
-              value: 'new',
-              child: _TripPickerRow(
-                icon: Icons.add_rounded,
-                title: 'New trip',
-                subtitle: 'Plan from scratch with AI',
-              ),
-            ),
-            for (final plan in plans)
-              DropdownMenuItem(
-                value: plan.id,
-                child: _TripPickerRow(
-                  icon: Icons.route_outlined,
-                  title: plan.title,
-                  subtitle: '${plan.dateRange} - ${plan.stops.length} stops',
-                ),
-              ),
-          ],
+    final items = [
+      const DropdownMenuItem(
+        value: 'new',
+        child: _TripPickerRow(
+          icon: Icons.add_rounded,
+          title: 'New trip',
+          subtitle: 'Plan from scratch with AI',
         ),
       ),
+      for (final plan in _visiblePlans)
+        DropdownMenuItem(
+          value: plan.id,
+          child: _TripPickerRow(
+            icon: Icons.route_outlined,
+            title: plan.title,
+            subtitle: '${plan.dateRange} - ${plan.stops.length} stops',
+          ),
+        ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: cs.surface.withValues(alpha: .88),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: cs.onSurface.withValues(alpha: .10)),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: widget.selectedTripId,
+              borderRadius: BorderRadius.circular(18),
+              isExpanded: true,
+              icon: const Icon(Icons.keyboard_arrow_down_rounded),
+              onChanged: widget.onChanged,
+              items: items,
+            ),
+          ),
+        ),
+        if (_hiddenPastCount > 0) ...[
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: () => setState(() => _showPastTrips = !_showPastTrips),
+            icon: Icon(
+              _showPastTrips ? Icons.history_toggle_off : Icons.history_rounded,
+              size: 18,
+            ),
+            label: Text(
+              _showPastTrips
+                  ? 'Hide past trips'
+                  : 'Show past trips ($_hiddenPastCount)',
+            ),
+            style: TextButton.styleFrom(
+              foregroundColor: cs.onSurface.withValues(alpha: .72),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -1008,10 +1080,10 @@ class _EventLine extends StatelessWidget {
 }
 
 class _ReadyPanel extends StatelessWidget {
-  const _ReadyPanel({required this.plan, required this.onOpenTrips});
+  const _ReadyPanel({required this.plan, required this.onOpenTrip});
 
   final TripPlan plan;
-  final VoidCallback onOpenTrips;
+  final VoidCallback onOpenTrip;
 
   @override
   Widget build(BuildContext context) {
@@ -1056,7 +1128,7 @@ class _ReadyPanel extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           FilledButton.icon(
-            onPressed: onOpenTrips,
+            onPressed: onOpenTrip,
             icon: const Icon(Icons.open_in_new_rounded),
             label: const Text('Open itinerary'),
           ),
