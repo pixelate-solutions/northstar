@@ -40,6 +40,32 @@ driving routes on the Map tab. Use a public Mapbox token with URL restrictions
 for deployed web builds when applicable. Native mobile apps cannot use Mapbox
 URL restrictions.
 
+## iOS TestFlight Builds
+
+TestFlight builds do not inherit terminal environment variables from previous
+`flutter run` commands or plain Xcode archives. Build the IPA through Flutter so
+the client-safe Dart defines are compiled into the app.
+
+Create a local release env file:
+
+```sh
+cp config/ios.release.env.example config/ios.release.env
+```
+
+Fill in the real publishable/client-safe values in `config/ios.release.env`,
+then build the signed IPA:
+
+```sh
+scripts/build_ios_ipa.sh
+```
+
+Upload the generated IPA from `build/ios/ipa/` with Xcode Organizer or Apple
+Transporter, then install the new build from TestFlight.
+
+Do not put server secrets in `config/ios.release.env`. Keep
+`SUPABASE_SECRET_KEY`, `CLERK_SECRET_KEY`, `OPENAI_API_KEY`, `TAVILY_API_KEY`,
+and `FOURSQUARE_API_KEY` only on the backend.
+
 ## Clerk Auth
 
 The app renders Clerk authentication by default. Pass `CLERK_PUBLISHABLE_KEY`

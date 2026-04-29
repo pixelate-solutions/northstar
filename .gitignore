@@ -33,6 +33,10 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Local build-time environment values.
+config/*.env
+!config/*.env.example
+
 # Symbolication related
 app.*.symbols
 
