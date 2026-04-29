@@ -31,7 +31,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="com.northstar.northstar"
+                    android:scheme="com.morrison.northstar"
                     android:host="login-callback" />
             </intent-filter>
             <intent-filter>

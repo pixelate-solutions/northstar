@@ -6,8 +6,6 @@ import '../features/auth/auth_landing_screen.dart';
 import '../features/auth/biometric_gate.dart';
 import '../features/auth/clerk_auth_screen.dart';
 import '../features/auth/forgot_password_screen.dart';
-import '../features/billing/paywall_screen.dart';
-import '../features/billing/subscription_gate.dart';
 import '../providers/auth_mode_provider.dart';
 import '../providers/auth_provider.dart';
 import '../features/auth/sign_in_screen.dart';
@@ -22,6 +20,8 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     refreshListenable: authNotifier,
     redirect: (context, state) {
+      if (state.matchedLocation == '/paywall') return '/';
+
       if (shouldUseClerkAuth) {
         if (_isAuthRoute(state.matchedLocation)) return '/';
         return null;
@@ -37,12 +37,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(
         path: '/',
-        builder: (context, state) =>
-            const BiometricGate(child: SubscriptionGate(child: HomeScreen())),
-      ),
-      GoRoute(
-        path: '/paywall',
-        builder: (context, state) => const PaywallScreen(),
+        builder: (context, state) => const BiometricGate(child: HomeScreen()),
       ),
       GoRoute(
         path: '/welcome',
@@ -68,17 +63,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/account',
-        builder: (context, state) => const BiometricGate(
-          child: SubscriptionGate(child: AccountScreen()),
-        ),
+        builder: (context, state) =>
+            const BiometricGate(child: AccountScreen()),
       ),
       GoRoute(
         path: '/reminders/:tripId',
         builder: (context, state) {
           final tripId = state.pathParameters['tripId']!;
-          return BiometricGate(
-            child: SubscriptionGate(child: RemindersScreen(tripId: tripId)),
-          );
+          return BiometricGate(child: RemindersScreen(tripId: tripId));
         },
       ),
     ],

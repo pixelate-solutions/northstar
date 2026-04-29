@@ -15,7 +15,7 @@ flutter run \
   --dart-define=SUPABASE_URL=https://fukhtizbaoovlmxikmou.supabase.co \
   --dart-define=SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key \
   --dart-define=CLERK_PUBLISHABLE_KEY=your-clerk-publishable-key \
-  --dart-define=SUPABASE_AUTH_REDIRECT_URL=com.northstar.northstar://login-callback \
+  --dart-define=SUPABASE_AUTH_REDIRECT_URL=com.morrison.northstar://login-callback \
   --dart-define=MAPBOX_ACCESS_TOKEN=your-mapbox-public-token \
   --dart-define=AGENT_SERVER_URL=http://localhost:3000
 ```
@@ -26,7 +26,7 @@ should use `SUPABASE_PUBLISHABLE_KEY`.
 
 `SUPABASE_AUTH_REDIRECT_URL` is where Supabase email confirmations and password
 reset links return after verification. The default is
-`com.northstar.northstar://login-callback`, which is registered in the iOS and
+`com.morrison.northstar://login-callback`, which is registered in the iOS and
 Android native projects.
 
 `CLERK_PUBLISHABLE_KEY` is required for the Clerk sign-in/sign-up flow. The app
@@ -75,9 +75,9 @@ Needed Clerk values:
 
 In the Supabase dashboard, open Authentication > URL Configuration:
 
-- Set Site URL to `com.northstar.northstar://login-callback` for a mobile-only
+- Set Site URL to `com.morrison.northstar://login-callback` for a mobile-only
   app, or to your production web URL if you have one.
-- Add `com.northstar.northstar://login-callback` to Redirect URLs.
+- Add `com.morrison.northstar://login-callback` to Redirect URLs.
 
 If the email templates have been customized, make sure confirmation and recovery
 links use `{{ .RedirectTo }}` rather than hardcoding `{{ .SiteURL }}`.

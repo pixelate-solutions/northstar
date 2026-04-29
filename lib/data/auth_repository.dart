@@ -6,7 +6,7 @@ import 'supabase_client.dart';
 
 const authRedirectUrl = String.fromEnvironment(
   'SUPABASE_AUTH_REDIRECT_URL',
-  defaultValue: 'com.northstar.northstar://login-callback',
+  defaultValue: 'com.morrison.northstar://login-callback',
 );
 const _accountServerUrl = String.fromEnvironment(
   'AGENT_SERVER_URL',
@@ -24,17 +24,18 @@ class AuthRepository {
     await supabase.auth.signInWithPassword(email: email, password: password);
   }
 
-  Future<void> signUpWithEmail(
+  Future<bool> signUpWithEmail(
     String name,
     String email,
     String password,
   ) async {
-    await supabase.auth.signUp(
+    final response = await supabase.auth.signUp(
       email: email,
       password: password,
       emailRedirectTo: authRedirectUrl,
       data: {'name': name, 'full_name': name},
     );
+    return response.session != null || supabase.auth.currentSession != null;
   }
 
   Future<void> signInWithGoogle() async {

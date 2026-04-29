@@ -45,11 +45,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
       _error = null;
     });
     try {
-      await AuthRepository().signUpWithEmail(name, email, password);
+      final signedIn = await AuthRepository().signUpWithEmail(
+        name,
+        email,
+        password,
+      );
       if (mounted) {
         setState(() {
           _loading = false;
-          _done = true;
+          _done = !signedIn;
         });
       }
     } catch (e) {

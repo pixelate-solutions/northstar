@@ -1,4 +1,4 @@
-package com.northstar.northstar
+package com.morrison.northstar
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

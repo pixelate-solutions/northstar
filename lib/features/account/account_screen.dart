@@ -199,7 +199,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   String _paymentSummary() {
     final membership = ref.read(billingControllerProvider).membership;
     if (membership == null || !membership.isEntitled) {
-      return 'No active subscription.';
+      return 'No active subscription. App access is already enabled.';
     }
     if (membership.isLifetime) {
       return 'Lifetime membership active.';
@@ -226,6 +226,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     final email = user?.email ?? '';
     final avatarUrl = _avatarCtrl.text.trim();
     final cs = Theme.of(context).colorScheme;
+    final hasBillingAccess = billing.membership?.isEntitled == true;
 
     final content = SafeArea(
       child: ListView(
@@ -387,17 +388,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                 ),
               ],
               const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: billing.membership?.isEntitled == true
-                    ? _openManageBilling
-                    : () => context.go('/paywall'),
-                icon: const Icon(Icons.credit_card_rounded),
-                label: Text(
-                  billing.membership?.isEntitled == true
-                      ? 'Manage billing'
-                      : 'Choose a plan',
+              if (hasBillingAccess)
+                OutlinedButton.icon(
+                  onPressed: _openManageBilling,
+                  icon: const Icon(Icons.credit_card_rounded),
+                  label: const Text('Manage billing'),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -474,6 +470,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     final offlineModeAsync = ref.watch(offlineModeProvider);
     final usageLimitAsync = ref.watch(usageLimitProvider);
     final clerkUser = ClerkAuth.of(context).user;
+    final hasBillingAccess = billing.membership?.isEntitled == true;
     final displayName =
         clerkUser?.firstName != null && clerkUser?.lastName != null
         ? '${clerkUser!.firstName} ${clerkUser.lastName}'
@@ -602,21 +599,16 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         ),
                       ],
                       const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: billing.membership?.isEntitled == true
-                            ? _openManageBilling
-                            : () => context.go('/paywall'),
-                        icon: const Icon(Icons.credit_card_rounded),
-                        label: Text(
-                          billing.membership?.isEntitled == true
-                              ? 'Manage billing'
-                              : 'Choose a plan',
+                      if (hasBillingAccess)
+                        OutlinedButton.icon(
+                          onPressed: _openManageBilling,
+                          icon: const Icon(Icons.credit_card_rounded),
+                          label: const Text('Manage billing'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: kForest,
+                            side: const BorderSide(color: kForest),
+                          ),
                         ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: kForest,
-                          side: const BorderSide(color: kForest),
-                        ),
-                      ),
                     ],
                   ),
                 ),
