@@ -10,6 +10,7 @@ import '../../models/trip_plan.dart';
 import '../../models/trip_stop.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/tag_colors.dart';
+import '../../core/utils/friendly_error.dart';
 import '../../core/utils/time_format.dart';
 import '../../core/widgets/glass_card.dart';
 import '../../core/widgets/tiny_pill.dart';
@@ -56,7 +57,9 @@ class _MapPanelState extends State<MapPanel>
       duration: const Duration(milliseconds: 500),
     );
     if (_mapboxAccessToken.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _precacheStopImages());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _precacheStopImages(),
+      );
     }
   }
 
@@ -160,10 +163,13 @@ class _MapPanelState extends State<MapPanel>
         _routeResult = result;
         _routeLoading = false;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted || requestId != _routeRequestId) return;
       setState(() {
-        _routeError = 'Could not load route. Open maps for live routing.';
+        _routeError = friendlyErrorMessage(
+          error,
+          fallback: 'Could not load route. Open maps for live routing.',
+        );
         _routeLoading = false;
       });
     }
@@ -291,6 +297,8 @@ class _RouteToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = cs.brightness == Brightness.dark;
     final startIndex = routeStartIndex;
     final endIndex = routeEndIndex;
     final hasRoute = startIndex != null && endIndex != null;
@@ -299,13 +307,13 @@ class _RouteToolbar extends StatelessWidget {
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: routeMode
-            ? kForest.withValues(alpha: .08)
-            : kInk.withValues(alpha: .04),
+            ? cs.primary.withValues(alpha: isDark ? .16 : .08)
+            : cs.onSurface.withValues(alpha: isDark ? .08 : .04),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: routeMode
-              ? kForest.withValues(alpha: .2)
-              : kLine.withValues(alpha: .9),
+              ? cs.primary.withValues(alpha: isDark ? .38 : .2)
+              : cs.onSurface.withValues(alpha: isDark ? .18 : .12),
         ),
       ),
       child: Column(
@@ -324,7 +332,7 @@ class _RouteToolbar extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: kInk,
+                    color: cs.onSurface,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -340,7 +348,9 @@ class _RouteToolbar extends StatelessWidget {
                   ),
                   label: Text(routeMode ? 'Done' : 'Route'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: routeMode ? kInk : kForest,
+                    backgroundColor: routeMode
+                        ? (isDark ? kDarkLine : kInk)
+                        : kForest,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                   ),
@@ -369,8 +379,12 @@ class _RouteToolbar extends StatelessWidget {
                     icon: const Icon(Icons.map_outlined, size: 16),
                     label: const Text('Open in maps'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: kInk,
-                      side: BorderSide(color: kLine.withValues(alpha: .9)),
+                      foregroundColor: cs.onSurface,
+                      side: BorderSide(
+                        color: cs.onSurface.withValues(
+                          alpha: isDark ? .18 : .12,
+                        ),
+                      ),
                       padding: const EdgeInsets.symmetric(horizontal: 10),
                     ),
                   ),
@@ -663,7 +677,22 @@ class _MapStopBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = cs.brightness == Brightness.dark;
     final color = tagColor(stop.tag);
+    final cardColor = isDark
+        ? Color.alphaBlend(color.withValues(alpha: .08), cs.surface)
+        : Colors.white;
+    final selectedBorderColor = isDark ? color.withValues(alpha: .82) : color;
+    final defaultBorderColor = cs.onSurface.withValues(
+      alpha: isDark ? .16 : .08,
+    );
+    final labelColor = cs.onSurface.withValues(alpha: isDark ? .68 : .58);
+    final titleColor = cs.onSurface;
+    final badgeTextColor = isDark
+        ? Colors.white.withValues(alpha: .92)
+        : tagTextColor(stop.tag);
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -674,19 +703,19 @@ class _MapStopBubble extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.all(9),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: cardColor,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: routeRole != null
-                  ? kForest
+                  ? cs.primary
                   : selected
-                  ? color
-                  : Colors.black.withValues(alpha: .08),
+                  ? selectedBorderColor
+                  : defaultBorderColor,
               width: selected ? 2 : 1,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: .08),
+                color: Colors.black.withValues(alpha: isDark ? .22 : .08),
                 blurRadius: 10,
                 offset: const Offset(0, 5),
               ),
@@ -702,7 +731,7 @@ class _MapStopBubble extends StatelessWidget {
                     width: 28,
                     height: 28,
                     decoration: BoxDecoration(
-                      color: color.withValues(alpha: .14),
+                      color: color.withValues(alpha: isDark ? .24 : .14),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Center(
@@ -710,8 +739,8 @@ class _MapStopBubble extends StatelessWidget {
                         routeRole ?? '$index',
                         style: TextStyle(
                           color: routeRole == null
-                              ? tagTextColor(stop.tag)
-                              : kForest,
+                              ? badgeTextColor
+                              : (isDark ? kDarkText : kForest),
                           fontWeight: FontWeight.w900,
                           fontSize: 12,
                         ),
@@ -725,7 +754,7 @@ class _MapStopBubble extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: kMuted,
+                        color: labelColor,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -739,7 +768,7 @@ class _MapStopBubble extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w900,
-                  color: kInk,
+                  color: titleColor,
                 ),
               ),
               const SizedBox(height: 5),
@@ -750,7 +779,7 @@ class _MapStopBubble extends StatelessWidget {
                   ),
                   if (routeMode) ...[
                     const SizedBox(width: 5),
-                    Icon(Icons.touch_app_rounded, size: 14, color: kMuted),
+                    Icon(Icons.touch_app_rounded, size: 14, color: labelColor),
                   ],
                 ],
               ),
@@ -778,6 +807,7 @@ class _RouteStatusText extends StatelessWidget {
     final text = loading
         ? 'Loading route...'
         : error ?? result?.label ?? 'Select two locations for routing.';
+    final cs = Theme.of(context).colorScheme;
     return Row(
       children: [
         if (loading) ...[
@@ -795,8 +825,8 @@ class _RouteStatusText extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
               color: error == null
-                  ? kMuted
-                  : Theme.of(context).colorScheme.error,
+                  ? cs.onSurface.withValues(alpha: .66)
+                  : cs.error,
               fontWeight: FontWeight.w800,
             ),
           ),

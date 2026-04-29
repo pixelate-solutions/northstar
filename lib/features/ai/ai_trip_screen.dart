@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../agent/agent_client.dart';
+import '../../core/utils/friendly_error.dart';
 import '../../core/utils/trip_date_utils.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/agent_event.dart';
@@ -172,7 +173,7 @@ class _AiTripScreenState extends State<AiTripScreen>
         return;
       }
       setState(() {
-        _error = _cleanAgentError(e);
+        _error = friendlyAgentError(e);
         _running = false;
         _runController = null;
       });
@@ -264,7 +265,7 @@ class _AiTripScreenState extends State<AiTripScreen>
           return;
         }
         setState(() {
-          _error = _cleanAgentError(e);
+          _error = friendlyAgentError(e);
           _running = false;
           _runController = null;
         });
@@ -388,15 +389,6 @@ class _AiTripScreenState extends State<AiTripScreen>
 
   @override
   bool get wantKeepAlive => true;
-}
-
-String _cleanAgentError(Object error) {
-  final text = error.toString();
-  const exceptionPrefix = 'Exception: ';
-  if (text.startsWith(exceptionPrefix)) {
-    return text.substring(exceptionPrefix.length);
-  }
-  return text;
 }
 
 class _AiHeader extends StatelessWidget {

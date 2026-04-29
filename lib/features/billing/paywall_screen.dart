@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../data/auth_repository.dart';
+import '../../data/offline_auth_repository.dart';
 import '../../models/subscription_status.dart';
 import '../../providers/auth_mode_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -57,6 +58,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
   Future<void> _signOut() async {
     if (ref.read(useClerkAuthProvider)) {
       await ClerkAuth.of(context).signOut();
+      await OfflineAuthRepository.clearClerkSessionMarker();
     } else {
       await AuthRepository().signOut();
     }

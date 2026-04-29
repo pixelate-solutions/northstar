@@ -7,7 +7,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/friendly_error.dart';
 import '../../data/auth_repository.dart';
+import '../../data/offline_auth_repository.dart';
 import '../../data/usage_repository.dart';
 import '../../models/subscription_status.dart';
 import '../../providers/auth_mode_provider.dart';
@@ -125,7 +127,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = friendlyErrorMessage(e);
         _savingName = false;
       });
     }
@@ -156,7 +158,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = friendlyErrorMessage(e);
         _savingPreferences = false;
       });
     }
@@ -179,7 +181,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = friendlyErrorMessage(e);
         _sendingReset = false;
       });
     }
@@ -194,6 +196,84 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     final uri = billingManagementUri();
     if (uri == null) return;
     await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _handleTokenLimitToggle(UsageLimit usage) async {
+    if (usage.isUnlimited) {
+      await _setTokenLimitDisabled(false);
+      return;
+    }
+
+    final password = await _showTokenLimitPasswordDialog();
+    if (password == null) return;
+    if (password != '123OFF') {
+      setState(() {
+        _message = null;
+        _error = 'Incorrect password.';
+      });
+      return;
+    }
+
+    await _setTokenLimitDisabled(true, password: password);
+  }
+
+  Future<void> _setTokenLimitDisabled(bool disabled, {String? password}) async {
+    setState(() {
+      _message = null;
+      _error = null;
+    });
+
+    try {
+      await ref
+          .read(tokenLimitControllerProvider.notifier)
+          .setDisabled(disabled: disabled, password: password);
+      final _ = await ref.refresh(usageLimitProvider.future);
+      if (!mounted) return;
+      setState(() {
+        _message = disabled
+            ? 'AI token limits are turned off.'
+            : 'AI token limits are turned back on.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = friendlyErrorMessage(e);
+      });
+    }
+  }
+
+  Future<String?> _showTokenLimitPasswordDialog() {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Turn off AI token limits?'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Password',
+              prefixIcon: Icon(Icons.password_rounded),
+            ),
+            onSubmitted: (_) =>
+                Navigator.of(context).pop(controller.text.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(controller.text.trim()),
+              child: const Text('Continue'),
+            ),
+          ],
+        );
+      },
+    ).whenComplete(controller.dispose);
   }
 
   String _paymentSummary() {
@@ -223,6 +303,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     final user = ref.watch(currentUserProvider);
     final billing = ref.watch(billingControllerProvider);
     final usageLimitAsync = ref.watch(usageLimitProvider);
+    final tokenLimitUpdating = ref
+        .watch(tokenLimitControllerProvider)
+        .isLoading;
     final email = user?.email ?? '';
     final avatarUrl = _avatarCtrl.text.trim();
     final cs = Theme.of(context).colorScheme;
@@ -403,6 +486,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
               _UsageLimitBody(
                 usageLimitAsync: usageLimitAsync,
                 onRefresh: () => ref.invalidate(usageLimitProvider),
+                tokenLimitUpdating: tokenLimitUpdating,
+                onToggleTokenLimit: _handleTokenLimitToggle,
               ),
             ],
           ),
@@ -469,6 +554,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     final homeTabAsync = ref.watch(homeTabProvider);
     final offlineModeAsync = ref.watch(offlineModeProvider);
     final usageLimitAsync = ref.watch(usageLimitProvider);
+    final tokenLimitUpdating = ref
+        .watch(tokenLimitControllerProvider)
+        .isLoading;
     final clerkUser = ClerkAuth.of(context).user;
     final hasBillingAccess = billing.membership?.isEntitled == true;
     final displayName =
@@ -563,6 +651,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                     if (!confirmed) return;
                     if (!context.mounted) return;
                     await ClerkAuth.of(context).signOut();
+                    await OfflineAuthRepository.clearClerkSessionMarker();
                     if (context.mounted) context.go('/welcome');
                   },
                 ),
@@ -691,6 +780,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                 _UsageLimitBody(
                   usageLimitAsync: usageLimitAsync,
                   onRefresh: () => ref.invalidate(usageLimitProvider),
+                  tokenLimitUpdating: tokenLimitUpdating,
+                  onToggleTokenLimit: _handleTokenLimitToggle,
                 ),
               ],
             ),
@@ -766,7 +857,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = friendlyErrorMessage(e);
         _deletingAccount = false;
       });
     }
@@ -777,10 +868,14 @@ class _UsageLimitBody extends StatelessWidget {
   const _UsageLimitBody({
     required this.usageLimitAsync,
     required this.onRefresh,
+    required this.tokenLimitUpdating,
+    required this.onToggleTokenLimit,
   });
 
   final AsyncValue<UsageLimit> usageLimitAsync;
   final VoidCallback onRefresh;
+  final bool tokenLimitUpdating;
+  final ValueChanged<UsageLimit> onToggleTokenLimit;
 
   @override
   Widget build(BuildContext context) {
@@ -828,7 +923,7 @@ class _UsageLimitBody extends StatelessWidget {
         data: (usage) {
           final usedPercent = (usage.usedFraction * 100).round();
           final leftPercent = 100 - usedPercent;
-          final overLimit = usage.tokensRemaining == 0;
+          final overLimit = !usage.isUnlimited && usage.tokensRemaining == 0;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -836,7 +931,9 @@ class _UsageLimitBody extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      '$usedPercent% used · $leftPercent% left',
+                      usage.isUnlimited
+                          ? 'AI token limits are off'
+                          : '$usedPercent% used · $leftPercent% left',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w900,
                       ),
@@ -845,16 +942,20 @@ class _UsageLimitBody extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              LinearProgressIndicator(
-                value: usage.usedFraction,
-                minHeight: 8,
-                borderRadius: BorderRadius.circular(8),
-                backgroundColor: cs.onSurface.withValues(alpha: .12),
-                color: overLimit ? cs.error : kForest,
-              ),
-              const SizedBox(height: 10),
+              if (!usage.isUnlimited) ...[
+                LinearProgressIndicator(
+                  value: usage.usedFraction,
+                  minHeight: 8,
+                  borderRadius: BorderRadius.circular(8),
+                  backgroundColor: cs.onSurface.withValues(alpha: .12),
+                  color: overLimit ? cs.error : kForest,
+                ),
+                const SizedBox(height: 10),
+              ],
               Text(
-                overLimit
+                usage.isUnlimited
+                    ? 'This account can use AI planning without the daily token cap.'
+                    : overLimit
                     ? 'Daily usage limit reached. Resets in ${_formatResetCountdown(usage.resetAt)}.'
                     : 'Resets in ${_formatResetCountdown(usage.resetAt)}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -862,7 +963,27 @@ class _UsageLimitBody extends StatelessWidget {
                       ? cs.error
                       : cs.onSurface.withValues(alpha: .62),
                   height: 1.25,
-                  fontWeight: overLimit ? FontWeight.w700 : FontWeight.w500,
+                  fontWeight: overLimit || usage.isUnlimited
+                      ? FontWeight.w700
+                      : FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: tokenLimitUpdating
+                    ? null
+                    : () => onToggleTokenLimit(usage),
+                icon: Icon(
+                  usage.isUnlimited
+                      ? Icons.lock_outline_rounded
+                      : Icons.lock_open_rounded,
+                ),
+                label: Text(
+                  tokenLimitUpdating
+                      ? 'Updating token limits...'
+                      : usage.isUnlimited
+                      ? 'Turn token limits back on'
+                      : 'Turn off AI token limits',
                 ),
               ),
             ],
@@ -874,6 +995,9 @@ class _UsageLimitBody extends StatelessWidget {
 }
 
 String _cleanError(Object error) {
+  final friendly = friendlyErrorMessage(error);
+  if (friendly != error.toString()) return friendly;
+
   final text = error.toString();
   const exceptionPrefix = 'Exception: ';
   const statePrefix = 'Bad state: ';
@@ -1275,7 +1399,7 @@ class _ProfileEditDialogState extends State<_ProfileEditDialog> {
       if (mounted) {
         setState(() {
           _saving = false;
-          _error = e.toString();
+          _error = friendlyErrorMessage(e);
         });
       }
     }
@@ -1307,6 +1431,7 @@ class _ProfileEditDialogState extends State<_ProfileEditDialog> {
     if (confirmed != true || !mounted) return;
     Navigator.of(context).pop();
     await widget.authState.signOut();
+    await OfflineAuthRepository.clearClerkSessionMarker();
     if (mounted) context.go('/welcome');
   }
 

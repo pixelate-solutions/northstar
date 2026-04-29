@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
+import '../core/utils/friendly_error.dart';
 import '../data/billing_repository.dart';
 import '../models/subscription_status.dart';
 import 'auth_provider.dart';
@@ -64,7 +65,7 @@ class BillingController extends ChangeNotifier {
       _handlePurchaseUpdates,
       onError: (Object error, StackTrace stackTrace) {
         _purchasePending = false;
-        _lastError = error.toString();
+        _lastError = friendlyErrorMessage(error);
         notifyListeners();
       },
     );
@@ -131,7 +132,7 @@ class BillingController extends ChangeNotifier {
       _lastError = null;
     } catch (error) {
       membership ??= SubscriptionStatus.inactive();
-      _lastError = error.toString();
+      _lastError = friendlyErrorMessage(error);
     } finally {
       _loadingMembership = false;
       notifyListeners();
@@ -164,7 +165,7 @@ class BillingController extends ChangeNotifier {
             'Configure these products in App Store Connect / Play Console or attach a local StoreKit configuration for testing.';
       }
     } catch (error) {
-      _lastError = _describeStoreError(error.toString());
+      _lastError = _describeStoreError(friendlyErrorMessage(error));
       _products = const {};
     } finally {
       _loadingProducts = false;
@@ -215,7 +216,7 @@ class BillingController extends ChangeNotifier {
       await _inAppPurchase.restorePurchases();
       _lastMessage = 'Checking for previous purchases...';
     } catch (error) {
-      _lastError = error.toString();
+      _lastError = friendlyErrorMessage(error);
     } finally {
       _restoringPurchases = false;
       notifyListeners();
@@ -231,7 +232,7 @@ class BillingController extends ChangeNotifier {
       membership = await _repository.redeemPromoCode(code.trim());
       _lastMessage = 'Promo code applied. Lifetime access unlocked.';
     } catch (error) {
-      _lastError = error.toString();
+      _lastError = friendlyErrorMessage(error);
     } finally {
       _redeemingPromo = false;
       notifyListeners();
@@ -285,7 +286,7 @@ class BillingController extends ChangeNotifier {
       _lastMessage = 'Subscription active.';
       _lastError = null;
     } catch (error) {
-      _lastError = error.toString();
+      _lastError = friendlyErrorMessage(error);
     } finally {
       _purchasePending = false;
       notifyListeners();

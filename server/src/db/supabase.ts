@@ -35,6 +35,7 @@ function resetAtUtc(now = new Date()): string {
 export interface DailyUsage {
   tokensUsed: number;
   tokenLimit: number;
+  tokenLimitDisabled: boolean;
   resetAt: string;
   usageDate: string;
 }
@@ -74,21 +75,57 @@ export interface SubscriptionState {
 export async function getDailyUsage(userId: string): Promise<DailyUsage> {
   const now = new Date();
   const usageDate = usageDateUtc(now);
-  const { data, error } = await supabase
-    .from('user_daily_usage')
-    .select('tokens_used')
-    .eq('user_id', userId)
-    .eq('usage_date', usageDate)
-    .maybeSingle();
+  const [{ data, error }, settings] = await Promise.all([
+    supabase
+      .from('user_daily_usage')
+      .select('tokens_used')
+      .eq('user_id', userId)
+      .eq('usage_date', usageDate)
+      .maybeSingle(),
+    getUsageSettings(userId),
+  ]);
 
   if (error) throw new Error(error.message);
 
   return {
     tokensUsed: Number(data?.tokens_used ?? 0),
     tokenLimit: dailyTokenLimit,
+    tokenLimitDisabled: settings.aiTokenLimitDisabled,
     resetAt: resetAtUtc(now),
     usageDate,
   };
+}
+
+export interface UsageSettings {
+  aiTokenLimitDisabled: boolean;
+}
+
+export async function getUsageSettings(userId: string): Promise<UsageSettings> {
+  const { data, error } = await supabase
+    .from('user_usage_settings')
+    .select('ai_token_limit_disabled')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  return {
+    aiTokenLimitDisabled: data?.ai_token_limit_disabled === true,
+  };
+}
+
+export async function setAiTokenLimitDisabled(
+  userId: string,
+  disabled: boolean,
+): Promise<DailyUsage> {
+  const { error } = await supabase.from('user_usage_settings').upsert({
+    user_id: userId,
+    ai_token_limit_disabled: disabled,
+    updated_at: new Date().toISOString(),
+  });
+
+  if (error) throw new Error(error.message);
+  return getDailyUsage(userId);
 }
 
 function normalizeSubscription(row: SubscriptionRow | null): SubscriptionState {
@@ -233,6 +270,7 @@ export async function incrementDailyUsage(
   return {
     tokensUsed: Number(data ?? 0),
     tokenLimit: dailyTokenLimit,
+    tokenLimitDisabled: (await getUsageSettings(userId)).aiTokenLimitDisabled,
     resetAt: resetAtUtc(now),
     usageDate,
   };

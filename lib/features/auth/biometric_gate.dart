@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/widgets/app_loading_screen.dart';
 import '../../data/auth_repository.dart';
+import '../../data/offline_auth_repository.dart';
 import '../../providers/auth_mode_provider.dart';
 import '../../providers/biometric_provider.dart';
 
@@ -47,6 +48,7 @@ class _UnlockScreenState extends ConsumerState<_UnlockScreen> {
     try {
       if (ref.read(useClerkAuthProvider)) {
         await ClerkAuth.of(context).signOut();
+        await OfflineAuthRepository.clearClerkSessionMarker();
       } else {
         await AuthRepository().signOut();
       }

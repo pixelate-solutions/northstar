@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../agent/agent_client.dart';
 import '../agent/agent_run_state.dart';
+import '../core/utils/friendly_error.dart';
 import '../models/agent_event.dart';
 import '../models/trip_brief.dart';
 import '../models/trip_plan.dart';
@@ -89,7 +90,7 @@ class AgentRunNotifier extends FamilyNotifier<AgentRunSnapshot, String> {
     } catch (err) {
       state = state.copyWith(
         status: AgentRunStatus.error,
-        errorMessage: err.toString(),
+        errorMessage: friendlyAgentError(err),
       );
       rethrow;
     }

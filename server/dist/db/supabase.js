@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.dailyTokenLimit = exports.supabase = void 0;
 exports.getDailyUsage = getDailyUsage;
+exports.getUsageSettings = getUsageSettings;
+exports.setAiTokenLimitDisabled = setAiTokenLimitDisabled;
 exports.getSubscriptionState = getSubscriptionState;
 exports.syncSubscriptionPurchase = syncSubscriptionPurchase;
 exports.redeemLifetimePromoCode = redeemLifetimePromoCode;
@@ -37,20 +39,46 @@ function resetAtUtc(now = new Date()) {
 async function getDailyUsage(userId) {
     const now = new Date();
     const usageDate = usageDateUtc(now);
-    const { data, error } = await exports.supabase
-        .from('user_daily_usage')
-        .select('tokens_used')
-        .eq('user_id', userId)
-        .eq('usage_date', usageDate)
-        .maybeSingle();
+    const [{ data, error }, settings] = await Promise.all([
+        exports.supabase
+            .from('user_daily_usage')
+            .select('tokens_used')
+            .eq('user_id', userId)
+            .eq('usage_date', usageDate)
+            .maybeSingle(),
+        getUsageSettings(userId),
+    ]);
     if (error)
         throw new Error(error.message);
     return {
         tokensUsed: Number(data?.tokens_used ?? 0),
         tokenLimit: exports.dailyTokenLimit,
+        tokenLimitDisabled: settings.aiTokenLimitDisabled,
         resetAt: resetAtUtc(now),
         usageDate,
     };
+}
+async function getUsageSettings(userId) {
+    const { data, error } = await exports.supabase
+        .from('user_usage_settings')
+        .select('ai_token_limit_disabled')
+        .eq('user_id', userId)
+        .maybeSingle();
+    if (error)
+        throw new Error(error.message);
+    return {
+        aiTokenLimitDisabled: data?.ai_token_limit_disabled === true,
+    };
+}
+async function setAiTokenLimitDisabled(userId, disabled) {
+    const { error } = await exports.supabase.from('user_usage_settings').upsert({
+        user_id: userId,
+        ai_token_limit_disabled: disabled,
+        updated_at: new Date().toISOString(),
+    });
+    if (error)
+        throw new Error(error.message);
+    return getDailyUsage(userId);
 }
 function normalizeSubscription(row) {
     if (!row) {
@@ -159,6 +187,7 @@ async function incrementDailyUsage(userId, tokenDelta) {
     return {
         tokensUsed: Number(data ?? 0),
         tokenLimit: exports.dailyTokenLimit,
+        tokenLimitDisabled: (await getUsageSettings(userId)).aiTokenLimitDisabled,
         resetAt: resetAtUtc(now),
         usageDate,
     };

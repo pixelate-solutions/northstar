@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import 'biometric_preference_tile.dart';
@@ -68,14 +69,7 @@ class _AuthContent extends StatelessWidget {
       ),
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(18, 22, 18, 34),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: const [
-            NorthstarClerkAuthentication(),
-            SizedBox(height: 14),
-            BiometricPreferenceTile(),
-          ],
-        ),
+        child: const _AuthPanelContents(),
       ),
     );
 
@@ -107,6 +101,92 @@ class _AuthContent extends StatelessWidget {
         header,
         Expanded(child: panel),
       ],
+    );
+  }
+}
+
+class _AuthPanelContents extends StatelessWidget {
+  const _AuthPanelContents();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<ConnectivityResult>>(
+      future: Connectivity().checkConnectivity(),
+      builder: (context, snapshot) {
+        return StreamBuilder<List<ConnectivityResult>>(
+          stream: Connectivity().onConnectivityChanged,
+          initialData: snapshot.data,
+          builder: (context, streamSnapshot) {
+            final results = streamSnapshot.data;
+            final isOffline =
+                results != null &&
+                results.every((result) => result == ConnectivityResult.none);
+
+            if (isOffline) {
+              return const _OfflineSignInUnavailable();
+            }
+
+            return const Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                NorthstarClerkAuthentication(),
+                SizedBox(height: 14),
+                BiometricPreferenceTile(),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _OfflineSignInUnavailable extends StatelessWidget {
+  const _OfflineSignInUnavailable();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+      decoration: BoxDecoration(
+        color: cs.onSurface.withValues(alpha: .06),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: cs.onSurface.withValues(alpha: .12)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: cs.primary.withValues(alpha: .14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.wifi_off_rounded, color: cs.primary, size: 26),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Sign in needs internet',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w900,
+              height: 1.08,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Offline mode keeps saved trips available after you have signed in on this device. Reconnect to sign in or refresh your account.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: cs.onSurface.withValues(alpha: .68),
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

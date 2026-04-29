@@ -1,6 +1,7 @@
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/utils/friendly_error.dart';
 import '../../models/trip_plan.dart';
 import '../../models/agent_event.dart';
 import '../../agent/agent_client.dart';
@@ -154,7 +155,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
       _showSnack('Trip shared.');
     } catch (e) {
-      _showSnack('Could not share trip: $e');
+      _showSnack('Could not share trip: ${friendlyErrorMessage(e)}');
     }
   }
 
@@ -264,7 +265,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         AgentEvent(
           kind: AgentEventKind.complete,
           title: 'Error',
-          detail: e.toString(),
+          detail: friendlyAgentError(e),
         ),
       );
     }
@@ -300,7 +301,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return tripsAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(body: Center(child: Text('Error: $e'))),
+      error: (e, _) =>
+          Scaffold(body: Center(child: Text(friendlyErrorMessage(e)))),
       data: (plans) {
         final selected = plans.isEmpty
             ? null

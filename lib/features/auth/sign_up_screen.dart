@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../data/auth_repository.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/friendly_error.dart';
+import '../../data/auth_repository.dart';
 import 'social_auth_buttons.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -96,6 +97,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
 }
 
 String _friendlyAuthError(Object error) {
+  final friendly = friendlyErrorMessage(error);
+  if (friendly != error.toString()) return friendly;
+
   final raw = error.toString();
   final lower = raw.toLowerCase();
   if (lower.contains('already') || lower.contains('registered')) {

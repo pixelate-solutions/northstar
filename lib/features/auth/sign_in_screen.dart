@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/utils/friendly_error.dart';
 import '../../data/auth_repository.dart';
 import '../../core/theme/app_colors.dart';
 import 'social_auth_buttons.dart';
@@ -43,7 +44,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = e.toString();
+          _error = friendlyErrorMessage(e);
           _loading = false;
         });
       }

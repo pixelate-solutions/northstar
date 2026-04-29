@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../agent/agent_client.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/friendly_error.dart';
 import '../../core/widgets/agent_timeline.dart';
 import '../../models/agent_event.dart';
 import '../../models/trip_brief.dart';
@@ -108,7 +109,7 @@ class _NewTripSheetState extends State<NewTripSheet> {
           AgentEvent(
             kind: AgentEventKind.complete,
             title: 'Error',
-            detail: e.toString(),
+            detail: friendlyAgentError(e),
           ),
         );
       });

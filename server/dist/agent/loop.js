@@ -140,6 +140,8 @@ function tryApplyFastEdit(ctx) {
 }
 async function checkDailyUsageLimit(ctx) {
     const usage = await (0, supabase_1.getDailyUsage)(ctx.userId);
+    if (usage.tokenLimitDisabled)
+        return null;
     if (usage.tokensUsed >= usage.tokenLimit)
         return usageLimitMessage(usage);
     return null;

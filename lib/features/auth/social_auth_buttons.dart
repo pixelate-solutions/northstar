@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../core/utils/friendly_error.dart';
 import '../../data/auth_repository.dart';
 
 bool get isAppleDevice {
@@ -27,7 +28,7 @@ class _SocialAuthButtonsState extends State<SocialAuthButtons> {
     try {
       await action();
     } catch (e) {
-      widget.onError?.call(e.toString());
+      widget.onError?.call(friendlyErrorMessage(e));
     } finally {
       if (mounted) setState(() => _loadingProvider = null);
     }

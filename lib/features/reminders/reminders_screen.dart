@@ -6,6 +6,7 @@ import '../../models/reminder.dart';
 import '../../providers/reminder_providers.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/friendly_error.dart';
 import '../../core/widgets/glass_card.dart';
 
 final _fmt = DateFormat('MMM d, y · h:mm a');
@@ -33,7 +34,7 @@ class RemindersScreen extends ConsumerWidget {
       ),
       body: remindersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyErrorMessage(e))),
         data: (reminders) => reminders.isEmpty
             ? _EmptyState(onAdd: () => _showAddDialog(context, ref))
             : ListView.separated(

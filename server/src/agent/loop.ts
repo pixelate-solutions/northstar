@@ -153,6 +153,7 @@ export function tryApplyFastEdit(ctx: AgentRunContext): TripPlan | null {
 
 async function checkDailyUsageLimit(ctx: AgentRunContext): Promise<string | null> {
   const usage = await getDailyUsage(ctx.userId);
+  if (usage.tokenLimitDisabled) return null;
   if (usage.tokensUsed >= usage.tokenLimit) return usageLimitMessage(usage);
   return null;
 }
