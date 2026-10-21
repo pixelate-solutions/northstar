@@ -34,6 +34,17 @@ class _NorthstarClerkAuthenticationState
   _AuthState _state = _AuthState.signingIn;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(const Duration(milliseconds: 250), () {
+        if (!mounted) return;
+        FocusManager.instance.primaryFocus?.unfocus();
+      });
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final authState = ClerkAuth.of(context);
     if (authState.isNotAvailable) return emptyWidget;

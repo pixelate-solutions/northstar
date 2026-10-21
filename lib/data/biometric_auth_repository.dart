@@ -37,7 +37,7 @@ class BiometricAuthRepository {
   Future<bool> isEnabled() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(_enabledKey) ?? false;
+      return prefs.getBool(_enabledKey) ?? true;
     } catch (_) {
       return false;
     }

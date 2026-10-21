@@ -198,6 +198,7 @@
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				D4224E8CFEFA08CB509220AB /* [CP] Embed Pods Frameworks */,
+				7AC64E9B32B24F1BA0E2F90C /* Embed Native Assets */,
 				42D6D6752D70F2D500A6F57A /* Generate Native Framework dSYMs */,
 			);
 			buildRules = (
@@ -301,6 +302,23 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/bin/sh \"${PROJECT_DIR}/scripts/generate_framework_dsyms.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		7AC64E9B32B24F1BA0E2F90C /* Embed Native Assets */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${PROJECT_DIR}/../build/ios/iphoneos/Runner.app/Frameworks/objective_c.framework/objective_c",
+			);
+			name = "Embed Native Assets";
+			outputPaths = (
+				"${TARGET_BUILD_DIR}/${WRAPPER_NAME}/Frameworks/objective_c.framework/objective_c",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${PROJECT_DIR}/scripts/embed_native_assets.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 		67878916ABFD2720220AE902 /* [CP] Check Pods Manifest.lock */ = {

@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/trip_providers.dart';
 import '../../data/home_preference_repository.dart';
 import '../../providers/home_preference_provider.dart';
+import '../../providers/status_bar_provider.dart';
 import '../account/account_screen.dart';
 import '../ai/ai_trip_screen.dart';
 import '../plan/plan_detail_screen.dart';
@@ -28,6 +29,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final AgentClient _agent = AgentClient();
   late final PageController _pageController;
+  late ProviderContainer _providerContainer;
   PlanView _view = PlanView.overview;
   bool _showTripDetail = false;
 
@@ -58,7 +60,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _slotForLogicalTab(_tab));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncStatusBarFade();
+    });
     _loadHomeTab();
+  }
+
+  void _syncStatusBarFade() {
+    ref.read(hideStatusBarFadeProvider.notifier).state = _tab == 0;
   }
 
   Future<void> _loadHomeTab() async {
@@ -69,9 +79,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _homeTab = savedTab;
       _tab = savedTab; // start on the home page
     });
+    _syncStatusBarFade();
     if (_pageController.hasClients) {
       _pageController.jumpToPage(_slotForLogicalTab(savedTab));
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _providerContainer = ProviderScope.containerOf(context, listen: false);
   }
 
   // Selects a logical page index (0=Trips, 1=Create, 2=Profile).
@@ -83,6 +100,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _tab = logicalIndex;
       if (logicalIndex == 0 && !preserveTripDetail) _showTripDetail = false;
     });
+    _syncStatusBarFade();
     if (!_pageController.hasClients) return;
     await _pageController.animateToPage(
       _slotForLogicalTab(logicalIndex),
@@ -238,6 +256,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   void dispose() {
+    _providerContainer.read(hideStatusBarFadeProvider.notifier).state = false;
     _pageController.dispose();
     super.dispose();
   }
@@ -280,6 +299,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _homeTab = newHome;
         _tab = newHome;
       });
+      _syncStatusBarFade();
       // Animate to the new home page (now in the middle slot).
       if (_pageController.hasClients) {
         _pageController.animateToPage(
@@ -309,22 +329,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             : plans[selectedIndex.clamp(0, plans.length - 1)];
 
         final pagesByLogicalTab = <int, Widget>{
-          0: SafeArea(
-            child: Stack(
-              children: [
-                if (selected != null)
-                  Positioned.fill(child: SoftBackdrop(plan: selected)),
-                Column(
-                  children: [
-                    Expanded(
-                      child: !_showTripDetail || selected == null
-                          ? TripLibrary(
-                              plans: plans,
-                              selectedIndex: selectedIndex,
-                              onSelected: _openTripDetail,
-                              onNewTrip: _openAi,
-                            )
-                          : _TripDetailPage(
+          0: Stack(
+            children: [
+              if (selected != null)
+                Positioned.fill(child: SoftBackdrop(plan: selected)),
+              Column(
+                children: [
+                  Expanded(
+                    child: !_showTripDetail || selected == null
+                        ? TripLibrary(
+                            plans: plans,
+                            selectedIndex: selectedIndex,
+                            onSelected: _openTripDetail,
+                            onNewTrip: _openAi,
+                          )
+                        : SafeArea(
+                            child: _TripDetailPage(
                               plan: selected,
                               view: _view,
                               onBack: _backToTripLibrary,
@@ -336,11 +356,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               onBudgetChanged: _saveBudget,
                               canManage: selected.isOwnedBy(currentUserId),
                             ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                          ),
+                  ),
+                ],
+              ),
+            ],
           ),
           1: AiTripScreen(
             agent: _agent,
@@ -360,7 +380,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         return Scaffold(
           body: PageView(
             controller: _pageController,
-            onPageChanged: (slot) => setState(() => _tab = _navOrder[slot]),
+            onPageChanged: (slot) {
+              setState(() => _tab = _navOrder[slot]);
+              _syncStatusBarFade();
+            },
             children: [
               for (final logicalTab in _navOrder)
                 KeyedSubtree(

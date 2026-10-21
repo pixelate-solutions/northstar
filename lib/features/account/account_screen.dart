@@ -37,7 +37,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   bool _savingPreferences = false;
   bool _deletingAccount = false;
   bool _emailReminders = true;
-  bool _lowStressDefaults = true;
+  bool _lowStressDefaults = false;
   bool _useAiMemory = true;
   String? _message;
   String? _error;
@@ -69,7 +69,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       _avatarCtrl.text = avatar;
     }
     _emailReminders = preferences['email_reminders'] as bool? ?? true;
-    _lowStressDefaults = preferences['low_stress_defaults'] as bool? ?? true;
+    _lowStressDefaults = preferences['low_stress_defaults'] as bool? ?? false;
     _useAiMemory = preferences['use_ai_memory'] as bool? ?? true;
   }
 
@@ -78,7 +78,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     if (!mounted) return;
     setState(() {
       _emailReminders = prefs.getBool('northstar_email_reminders') ?? true;
-      _lowStressDefaults = prefs.getBool('northstar_low_stress') ?? true;
+      _lowStressDefaults = prefs.getBool('northstar_low_stress') ?? false;
       _useAiMemory = prefs.getBool('northstar_use_ai_memory') ?? true;
     });
   }

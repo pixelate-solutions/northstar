@@ -323,6 +323,7 @@ class _AiTripScreenState extends State<AiTripScreen>
     final cs = Theme.of(context).colorScheme;
     final dark = cs.brightness == Brightness.dark;
     final muted = cs.onSurface.withValues(alpha: dark ? .62 : .58);
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
     return SafeArea(
       child: Container(
@@ -341,7 +342,13 @@ class _AiTripScreenState extends State<AiTripScreen>
             constraints: const BoxConstraints(maxWidth: 760),
             child: ListView(
               controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: EdgeInsets.fromLTRB(
+                20,
+                18,
+                20,
+                28 + keyboardInset + (keyboardInset > 0 ? 24 : 0),
+              ),
               children: [
                 _AiHeader(
                   savedCount: widget.plans.length,
@@ -812,10 +819,13 @@ class _PromptComposer extends StatefulWidget {
 }
 
 class _PromptComposerState extends State<_PromptComposer> {
+  final _focusNode = FocusNode();
+
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_changed);
+    _focusNode.addListener(_handleFocusChanged);
   }
 
   @override
@@ -828,21 +838,47 @@ class _PromptComposerState extends State<_PromptComposer> {
 
   @override
   void dispose() {
+    _focusNode
+      ..removeListener(_handleFocusChanged)
+      ..dispose();
     widget.controller.removeListener(_changed);
     super.dispose();
   }
 
   void _changed() => setState(() {});
 
+  void _handleFocusChanged() {
+    if (!_focusNode.hasFocus) return;
+    _ensureComposerVisible();
+    Future<void>.delayed(
+      const Duration(milliseconds: 280),
+      _ensureComposerVisible,
+    );
+  }
+
+  void _ensureComposerVisible() {
+    if (!mounted || !_focusNode.hasFocus) return;
+    Scrollable.ensureVisible(
+      context,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      alignment: .96,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final canSend = widget.controller.text.trim().isNotEmpty;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final input = TextField(
       controller: widget.controller,
+      focusNode: _focusNode,
       minLines: 1,
       maxLines: 5,
       textInputAction: TextInputAction.newline,
+      scrollPadding: EdgeInsets.only(bottom: keyboardInset + 112, top: 24),
       decoration: InputDecoration(
         hintText: widget.hint,
         border: InputBorder.none,
@@ -903,11 +939,38 @@ class _PromptComposerState extends State<_PromptComposer> {
   }
 }
 
-class _ExamplePrompts extends StatelessWidget {
+class _ExamplePrompts extends StatefulWidget {
   const _ExamplePrompts({required this.input, required this.onRun});
 
   final TextEditingController input;
   final VoidCallback onRun;
+
+  @override
+  State<_ExamplePrompts> createState() => _ExamplePromptsState();
+}
+
+class _ExamplePromptsState extends State<_ExamplePrompts> {
+  @override
+  void initState() {
+    super.initState();
+    widget.input.addListener(_onInputChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ExamplePrompts oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.input == widget.input) return;
+    oldWidget.input.removeListener(_onInputChanged);
+    widget.input.addListener(_onInputChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.input.removeListener(_onInputChanged);
+    super.dispose();
+  }
+
+  void _onInputChanged() => setState(() {});
 
   @override
   Widget build(BuildContext context) {
@@ -916,21 +979,38 @@ class _ExamplePrompts extends StatelessWidget {
       'Four days in Mexico City for museums, design, and great dinners',
       'A family trip to Vancouver with nature, easy transit, and rain backups',
     ];
-    return Wrap(
-      spacing: 5,
-      runSpacing: 5,
-      alignment: WrapAlignment.center,
-      children: [
-        for (final example in examples)
-          ActionChip(
-            label: Text(example),
-            shape: const StadiumBorder(),
-            onPressed: () {
-              input.text = example;
-              onRun();
-            },
-          ),
-      ],
+
+    final showExamples = widget.input.text.trim().isEmpty;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        return SizeTransition(
+          sizeFactor: animation,
+          axisAlignment: -1,
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
+      child: showExamples
+          ? Wrap(
+              key: const ValueKey('examples'),
+              spacing: 5,
+              runSpacing: 5,
+              alignment: WrapAlignment.center,
+              children: [
+                for (final example in examples)
+                  ActionChip(
+                    label: Text(example),
+                    shape: const StadiumBorder(),
+                    onPressed: () {
+                      widget.input.text = example;
+                      widget.onRun();
+                    },
+                  ),
+              ],
+            )
+          : const SizedBox.shrink(key: ValueKey('no-examples')),
     );
   }
 }

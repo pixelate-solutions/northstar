@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -12,6 +13,7 @@ import 'data/supabase_client.dart';
 import 'features/auth/clerk_auth_screen.dart';
 import 'features/auth/clerk_configuration_screen.dart';
 import 'providers/auth_mode_provider.dart';
+import 'providers/status_bar_provider.dart';
 import 'router/app_router.dart';
 
 class NorthstarApp extends ConsumerWidget {
@@ -28,6 +30,7 @@ class NorthstarApp extends ConsumerWidget {
       darkTheme: darkTheme(),
       themeMode: ThemeMode.system,
       routerConfig: router,
+      builder: _dismissKeyboardBuilder,
     );
 
     if (!shouldUseClerkAuth) return app;
@@ -39,6 +42,7 @@ class NorthstarApp extends ConsumerWidget {
         theme: lightTheme(),
         darkTheme: darkTheme(),
         themeMode: ThemeMode.system,
+        builder: _dismissKeyboardBuilder,
         home: const ClerkConfigurationScreen(),
       );
     }
@@ -52,6 +56,7 @@ class NorthstarApp extends ConsumerWidget {
           theme: lightTheme(),
           darkTheme: darkTheme(),
           themeMode: ThemeMode.system,
+          builder: _dismissKeyboardBuilder,
           home: const AppLoadingScreen(),
         ),
       ),
@@ -75,10 +80,75 @@ class NorthstarApp extends ConsumerWidget {
                 theme: lightTheme(),
                 darkTheme: darkTheme(),
                 themeMode: ThemeMode.system,
+                builder: _dismissKeyboardBuilder,
                 home: const ClerkAuthScreen(),
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+Widget _dismissKeyboardBuilder(BuildContext context, Widget? child) {
+  return Stack(
+    children: [
+      GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () {
+          final focus = FocusManager.instance.primaryFocus;
+          if (focus != null && !focus.hasPrimaryFocus) {
+            focus.unfocus();
+          }
+        },
+        child: child ?? const SizedBox.shrink(),
+      ),
+      Positioned(
+        top: 0,
+        left: 0,
+        right: 0,
+        child: Consumer(
+          builder: (context, ref, _) {
+            final hideFade = ref.watch(hideStatusBarFadeProvider);
+            if (hideFade) return const SizedBox.shrink();
+            return const _StatusBarScrollFade();
+          },
+        ),
+      ),
+    ],
+  );
+}
+
+class _StatusBarScrollFade extends StatelessWidget {
+  const _StatusBarScrollFade();
+
+  @override
+  Widget build(BuildContext context) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    if (topInset <= 0) return const SizedBox.shrink();
+
+    final bg = Theme.of(context).scaffoldBackgroundColor;
+    return IgnorePointer(
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            height: topInset + 4,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  bg,
+                  bg.withValues(alpha: .78),
+                  bg.withValues(alpha: .34),
+                  bg.withValues(alpha: 0),
+                ],
+                stops: const [0, .48, .78, 1],
+              ),
+            ),
+          ),
         ),
       ),
     );

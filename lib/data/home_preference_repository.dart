@@ -16,7 +16,7 @@ class HomePreferenceRepository {
 
   Future<bool> getOfflineMode() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_offlineModeKey) ?? false;
+    return prefs.getBool(_offlineModeKey) ?? true;
   }
 
   Future<void> setOfflineMode(bool enabled) async {

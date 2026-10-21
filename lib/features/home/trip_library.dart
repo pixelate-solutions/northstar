@@ -41,200 +41,45 @@ class _TripLibraryState extends State<TripLibrary> {
   Widget build(BuildContext context) {
     final entries = _filteredEntries;
     final hiddenPastCount = widget.plans.where(isPastTrip).length;
+    final topPadding = MediaQuery.paddingOf(context).top;
 
-    return CustomScrollView(
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-          sliver: SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: kInk,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.travel_explore_rounded,
-                        color: kGold,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Trips',
-                            style: Theme.of(context).textTheme.headlineSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w900,
-                                  height: 1,
-                                ),
-                          ),
-                          Text(
-                            '${entries.length} ${entries.length == 1 ? 'trip' : 'trips'}',
-                            style: Theme.of(context).textTheme.labelLarge
-                                ?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurface
-                                      .withValues(alpha: .55),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton.filledTonal(
-                      tooltip: 'Plan a trip',
-                      onPressed: widget.onNewTrip,
-                      icon: const Icon(Icons.add_rounded),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                SegmentedButton<TripLibraryView>(
-                  segments: const [
-                    ButtonSegment(
-                      value: TripLibraryView.grid,
-                      icon: Icon(Icons.grid_view_rounded),
-                      label: Text('Grid'),
-                    ),
-                    ButtonSegment(
-                      value: TripLibraryView.list,
-                      icon: Icon(Icons.view_list_rounded),
-                      label: Text('List'),
-                    ),
-                  ],
-                  selected: {_view},
-                  onSelectionChanged: (selection) {
-                    setState(() => _view = selection.first);
-                  },
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: _searchController,
-                  textInputAction: TextInputAction.search,
-                  onChanged: (value) => setState(() => _query = value),
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: _query.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: 'Clear search',
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _query = '');
-                            },
-                            icon: const Icon(Icons.close_rounded),
-                          ),
-                    hintText: 'Search trips, destinations, dates',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    FilterChip(
-                      label: Text(
-                        hiddenPastCount == 0
-                            ? 'Show past trips'
-                            : 'Show past trips ($hiddenPastCount)',
-                      ),
-                      selected: _showPastTrips,
-                      showCheckmark: false,
-                      onSelected: (value) =>
-                          setState(() => _showPastTrips = value),
-                      avatar: const Icon(Icons.history_rounded, size: 18),
-                    ),
-                    if (!_showPastTrips && hiddenPastCount > 0)
-                      Text(
-                        'Past trips are hidden.',
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: .55),
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.fromLTRB(16, topPadding + 12, 16, 10),
+          child: _TripLibraryHeader(
+            tripCount: entries.length,
+            hiddenPastCount: hiddenPastCount,
+            view: _view,
+            query: _query,
+            searchController: _searchController,
+            showPastTrips: _showPastTrips,
+            onNewTrip: widget.onNewTrip,
+            onViewChanged: (view) => setState(() => _view = view),
+            onQueryChanged: (value) => setState(() => _query = value),
+            onClearQuery: () {
+              _searchController.clear();
+              setState(() => _query = '');
+            },
+            onShowPastChanged: (value) =>
+                setState(() => _showPastTrips = value),
           ),
         ),
-        if (widget.plans.isEmpty)
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: _LibraryEmptyState(onNewTrip: widget.onNewTrip),
-          )
-        else if (entries.isEmpty)
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: _NoMatchingTrips(
-              showPastTrips: _showPastTrips,
-              hiddenPastCount: hiddenPastCount,
-              onShowPastTrips: hiddenPastCount == 0
-                  ? null
-                  : () => setState(() => _showPastTrips = true),
-            ),
-          )
-        else if (_view == TripLibraryView.grid)
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 28),
-            sliver: SliverLayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.crossAxisExtent;
-                final crossAxisCount = width >= 980
-                    ? 3
-                    : width >= 620
-                    ? 2
-                    : 1;
-                return SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxisCount,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    mainAxisExtent: 150,
-                  ),
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    final entry = entries[index];
-                    return TripCard(
-                      plan: entry.plan,
-                      selected: false,
-                      isPast: entry.isPast,
-                      badgeLabel: entry.isPast ? 'Past' : null,
-                      onTap: () => widget.onSelected(entry.originalIndex),
-                    );
-                  }, childCount: entries.length),
-                );
-              },
-            ),
-          )
-        else
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 28),
-            sliver: SliverList.separated(
-              itemCount: entries.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final entry = entries[index];
-                return _TripListTile(
-                  plan: entry.plan,
-                  selected: false,
-                  isPast: entry.isPast,
-                  onTap: () => widget.onSelected(entry.originalIndex),
-                );
-              },
-            ),
+        Expanded(
+          child: _TripLibraryResults(
+            entries: entries,
+            view: _view,
+            plansEmpty: widget.plans.isEmpty,
+            showPastTrips: _showPastTrips,
+            hiddenPastCount: hiddenPastCount,
+            onNewTrip: widget.onNewTrip,
+            onSelected: widget.onSelected,
+            onShowPastTrips: hiddenPastCount == 0
+                ? null
+                : () => setState(() => _showPastTrips = true),
           ),
+        ),
       ],
     );
   }
@@ -263,6 +108,242 @@ class _TripLibraryState extends State<TripLibrary> {
       ...plan.destinations,
     ].join(' ').toLowerCase();
     return haystack.contains(query);
+  }
+}
+
+class _TripLibraryHeader extends StatelessWidget {
+  const _TripLibraryHeader({
+    required this.tripCount,
+    required this.hiddenPastCount,
+    required this.view,
+    required this.query,
+    required this.searchController,
+    required this.showPastTrips,
+    required this.onNewTrip,
+    required this.onViewChanged,
+    required this.onQueryChanged,
+    required this.onClearQuery,
+    required this.onShowPastChanged,
+  });
+
+  final int tripCount;
+  final int hiddenPastCount;
+  final TripLibraryView view;
+  final String query;
+  final TextEditingController searchController;
+  final bool showPastTrips;
+  final VoidCallback onNewTrip;
+  final ValueChanged<TripLibraryView> onViewChanged;
+  final ValueChanged<String> onQueryChanged;
+  final VoidCallback onClearQuery;
+  final ValueChanged<bool> onShowPastChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: kInk,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.travel_explore_rounded, color: kGold),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Trips',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                  Text(
+                    '$tripCount ${tripCount == 1 ? 'trip' : 'trips'}',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: cs.onSurface.withValues(alpha: .55),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton.filledTonal(
+              tooltip: 'Plan a trip',
+              onPressed: onNewTrip,
+              icon: const Icon(Icons.add_rounded),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        SegmentedButton<TripLibraryView>(
+          segments: const [
+            ButtonSegment(
+              value: TripLibraryView.grid,
+              icon: Icon(Icons.grid_view_rounded),
+              label: Text('Grid'),
+            ),
+            ButtonSegment(
+              value: TripLibraryView.list,
+              icon: Icon(Icons.view_list_rounded),
+              label: Text('List'),
+            ),
+          ],
+          selected: {view},
+          onSelectionChanged: (selection) => onViewChanged(selection.first),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: searchController,
+          textInputAction: TextInputAction.search,
+          onChanged: onQueryChanged,
+          decoration: InputDecoration(
+            prefixIcon: const Icon(Icons.search_rounded),
+            suffixIcon: query.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: onClearQuery,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+            hintText: 'Search trips, destinations, dates',
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            FilterChip(
+              label: Text(
+                hiddenPastCount == 0
+                    ? 'Show past trips'
+                    : 'Show past trips ($hiddenPastCount)',
+              ),
+              selected: showPastTrips,
+              showCheckmark: false,
+              onSelected: onShowPastChanged,
+              avatar: const Icon(Icons.history_rounded, size: 18),
+            ),
+            if (!showPastTrips && hiddenPastCount > 0)
+              Text(
+                'Past trips are hidden.',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: cs.onSurface.withValues(alpha: .55),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _TripLibraryResults extends StatelessWidget {
+  const _TripLibraryResults({
+    required this.entries,
+    required this.view,
+    required this.plansEmpty,
+    required this.showPastTrips,
+    required this.hiddenPastCount,
+    required this.onNewTrip,
+    required this.onSelected,
+    required this.onShowPastTrips,
+  });
+
+  final List<_TripEntry> entries;
+  final TripLibraryView view;
+  final bool plansEmpty;
+  final bool showPastTrips;
+  final int hiddenPastCount;
+  final VoidCallback onNewTrip;
+  final ValueChanged<int> onSelected;
+  final VoidCallback? onShowPastTrips;
+
+  @override
+  Widget build(BuildContext context) {
+    if (plansEmpty) {
+      return ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(16, 22, 16, 28),
+        children: [_LibraryEmptyState(onNewTrip: onNewTrip)],
+      );
+    }
+
+    if (entries.isEmpty) {
+      return ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(16, 22, 16, 28),
+        children: [
+          _NoMatchingTrips(
+            showPastTrips: showPastTrips,
+            hiddenPastCount: hiddenPastCount,
+            onShowPastTrips: onShowPastTrips,
+          ),
+        ],
+      );
+    }
+
+    if (view == TripLibraryView.grid) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth - 32;
+          final crossAxisCount = width >= 980
+              ? 3
+              : width >= 620
+              ? 2
+              : 1;
+          return GridView.builder(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              mainAxisExtent: 150,
+            ),
+            itemCount: entries.length,
+            itemBuilder: (context, index) {
+              final entry = entries[index];
+              return TripCard(
+                plan: entry.plan,
+                selected: false,
+                isPast: entry.isPast,
+                badgeLabel: entry.isPast ? 'Past' : null,
+                onTap: () => onSelected(entry.originalIndex),
+              );
+            },
+          );
+        },
+      );
+    }
+
+    return ListView.separated(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+      itemCount: entries.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        return _TripListTile(
+          plan: entry.plan,
+          selected: false,
+          isPast: entry.isPast,
+          onTap: () => onSelected(entry.originalIndex),
+        );
+      },
+    );
   }
 }
 
